@@ -1,0 +1,28 @@
+# 运行期产生的隐私与登录态（切勿提交）
+.bridge-profile/
+.printer-webview-profile/
+.live-webview-profile/
+.scene-webview-profile/
+.capture-compat/
+.bridge-room
+.live-room
+desktop-bridge.log
+avatar-cache.json
+ws-samples/
+.output-test/
+
+# 测试产物
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 大体积运行时二进制（由 scripts/vendor-assets.sh 还原）
+assets/*.wav
+assets/*.png
+assets/generated/*.png
+assets/generated/original-icons/*.png
+docs/screenshots/*.png
+docs/screenshots/*.jpg
+docs/*.jpg
+tiktok-cover.png
+youtube-cover.png
