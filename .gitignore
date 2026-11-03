@@ -16,7 +16,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# 大体积运行时二进制（由 scripts/vendor-assets.sh 还原）
+# 大体积运行时二进制（由 scripts/vendor-assets.sh 从上游还原）
+# three.module.js（1.3MB）是渲染层唯一的硬依赖，体积可接受，直接入库，避免首跑必须联网。
 assets/*.wav
 assets/*.png
 assets/generated/*.png

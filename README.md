@@ -46,7 +46,7 @@ python src/desktop/desktop_launcher.py --server-only
 ```
 printcast/
 ├── src/
-│   ├── collector/    采集层   live-collector.mjs  bridge-probe.mjs  rules-exporter.mjs
+│   ├── collector/    采集层   live-collector.mjs  parse.mjs  collect-script.mjs  bridge-probe.mjs  rules-exporter.mjs
 │   ├── server/       传输层   bridge-server.mjs
 │   ├── render/       渲染层   scene-channel.mjs  scene-output.mjs  render-budget.mjs
 │   ├── rules/        规则层   print-settings.mjs  demo-rules.mjs
@@ -60,6 +60,14 @@ printcast/
 ├── docs/ exports/    截图封面 / 朗读文案导出
 └── extract-original-icons.py  wx-copy.js  ROADMAP.md  LICENSE  .gitignore
 ```
+
+采集层内部再切三块，各管一件事，互不纠缠：
+
+| 文件 | 职责 |
+|---|---|
+| `parse.mjs` | 纯函数：弹幕行解析、protobuf wire-format 遍历、`eachEnvelope` 信封识别、头像 URL 判定、点赞公平分配。无副作用，测试直接 import |
+| `collect-script.mjs` | 注入到直播间页面执行的采集脚本字符串。只按文本特征定位（弹幕行形态、头像 URL、在线观众入口），**不依赖抖音混淆后的类名** |
+| `live-collector.mjs` | 进程本体：CDP 挂接、端口探测、协议帧入口 `handleWSFrame`、头像三层兜底、令牌桶限流、断线重连、房间切换 |
 
 | 层 | 职责 | 依赖方向 |
 |---|---|---|
@@ -137,7 +145,18 @@ node check-popup.mjs                      # CDP 弹窗集成（需桌面版在�
 
 ## 首次拉取说明
 
-大体积二进制（音频 wav / 背景贴图 png / 文档截图，约 33MB）未随 git 提交，执行一次 `bash scripts/vendor-assets.sh` 即可从上游按原相对路径还原，之后完全离线可运行。
+大体积二进制（音频 wav / 背景贴图 png / 文档截图，约 33MB）未随 git 提交，执行一次 `bash scripts/vendor-assets.sh` 即可从上游按原相对路径还原，之后完全离线可运行。`assets/three.module.js`（1.3MB）是渲染层唯一硬依赖，已直接入库，无需联网。
+
+## 贡献与提交
+
+```bash
+git clone https://github.com/LocalForges/printcast.git
+cd printcast
+bash scripts/vendor-assets.sh       # 还原二进制资源
+cd tests && node --test *.test.mjs  # 53/53 应当全绿
+```
+
+改了采集层请务必跑 `tests/bridge.test.mjs`（覆盖 protobuf 信封识别、头像归属、点赞限流）；改了页面请起本地 HTTP 服务，用浏览器打开 `/web/index.html` 看控制台，不要只看静态文件。
 
 ## 路线图
 
