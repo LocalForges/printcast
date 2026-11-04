@@ -4,16 +4,23 @@
 共享同一份实时进度。控制器本身无网络、无鉴权——鉴权由 server 层把关。
 
 消息类型沿用 relay 的白名单：view-appearance，载荷即 Appearance.to_dict()。
+
+状态持久化：每次 start / next / trigger / reset 后把配置 + 进度 + 调度器游标
+写入 db.runtime_state；服务重启时自动恢复，避免「重启即归零、固定 seed 失效」。
+所有状态变更都在一把可重入锁内完成，防止两个标签页同时点「下一位」撕裂状态。
 """
 from __future__ import annotations
 
+import sys
+import threading
 import time
 from typing import List, Optional
 
-from . import storage
-from .scheduler import ContentScheduler
+from . import db, storage
+from .scheduler import ContentScheduler, normalize_seed
 
 _BROADCAST_CLIENT = 'printcast-broadcast'
+_STATE_KEY = 'broadcast'
 
 
 class BroadcastError(Exception):
@@ -21,8 +28,9 @@ class BroadcastError(Exception):
 
 
 class BroadcastController:
-    def __init__(self, relay):
+    def __init__(self, relay, restore=True):
         self.relay = relay
+        self._lock = threading.RLock()
         self.scheduler: Optional[ContentScheduler] = None
         self.pack_ids: List[str] = []
         self.strategy = 'concat'
@@ -30,58 +38,68 @@ class BroadcastController:
         self.current = None
         self.seq = 0
         self.started_at = None
+        if restore:
+            self.restore()
 
     # —— 生命周期 ——
 
     def start(self, pack_ids: List[str], strategy: str = 'concat',
               mode: Optional[str] = None, seed=None, loop: Optional[bool] = None):
-        packs = []
-        for pid in pack_ids:
-            pack = storage.get_pack(pid) if storage.valid_pack_id(pid) else None
-            if pack is None:
-                raise BroadcastError('内容包不存在：%s' % pid)
-            packs.append(pack)
-        self.scheduler = ContentScheduler(packs, strategy=strategy, seed=seed)
-        if mode:
-            if mode not in ('sequence', 'weighted', 'trigger'):
-                raise BroadcastError('非法出场模式：%s' % mode)
-            self.scheduler.mode = mode
-        if loop is not None:
-            self.scheduler.loop = bool(loop)
-        self.pack_ids = list(pack_ids)
-        self.strategy = strategy
-        # 固定 seed 是「序列可复现」的凭据：工作台把预演参数原样带回 start，
-        # state() 回显 seed，才能核对刚才预演的确实是这一轮真实广播。
-        self.seed = seed
-        self.current = None
-        self.seq = 0
-        self.started_at = time.time()
-        self.scheduler.reset()
-        return self.state()
+        with self._lock:
+            packs = []
+            for pid in pack_ids:
+                pack = storage.get_pack(pid) if storage.valid_pack_id(pid) else None
+                if pack is None:
+                    raise BroadcastError('内容包不存在：%s' % pid)
+                packs.append(pack)
+            seed = normalize_seed(seed)
+            self.scheduler = ContentScheduler(packs, strategy=strategy, seed=seed)
+            if mode:
+                if mode not in ('sequence', 'weighted', 'trigger'):
+                    raise BroadcastError('非法出场模式：%s' % mode)
+                self.scheduler.mode = mode
+            if loop is not None:
+                self.scheduler.loop = bool(loop)
+            self.pack_ids = list(pack_ids)
+            self.strategy = strategy
+            # 固定 seed 是「序列可复现」的凭据：工作台把预演参数原样带回 start，
+            # state() 回显 seed，才能核对刚才预演的确实是这一轮真实广播。
+            self.seed = seed
+            self.current = None
+            self.seq = 0
+            self.started_at = time.time()
+            self.scheduler.reset()
+            self._persist()
+            return self.state()
 
     def reset(self):
-        if self.scheduler is None:
-            raise BroadcastError('尚未开始广播，请先 start')
-        self.scheduler.reset()
-        self.current = None
-        self.seq = 0
-        return self.state()
+        with self._lock:
+            if self.scheduler is None:
+                raise BroadcastError('尚未开始广播，请先 start')
+            self.scheduler.reset()
+            self.current = None
+            self.seq = 0
+            self._persist()
+            return self.state()
 
     # —— 出场推进 ——
 
     def next(self):
-        ap = self._require().next()
-        if ap is None:
-            raise BroadcastError('出场序列已结束（如需循环请在 start 时设置 loop=true）')
-        return self._publish(ap)
+        with self._lock:
+            ap = self._require().next()
+            if ap is None:
+                raise BroadcastError('出场序列已结束（如需循环请在 start 时设置 loop=true）')
+            return self._publish(ap)
 
     def trigger(self, char_id: Optional[str] = None):
-        ap = self._require().trigger(char_id)
-        if ap is None:
-            raise BroadcastError('没有可触发的角色' + (f'：{char_id}' if char_id else ''))
-        return self._publish(ap)
+        with self._lock:
+            ap = self._require().trigger(char_id)
+            if ap is None:
+                raise BroadcastError('没有可触发的角色' + (f'：{char_id}' if char_id else ''))
+            return self._publish(ap)
 
     def _publish(self, ap):
+        # 调用方已持有 _lock。
         self.seq += 1
         self.current = ap.to_dict()
         self.relay.publish(_BROADCAST_CLIENT, {
@@ -89,6 +107,7 @@ class BroadcastController:
             'seq': self.seq,
             'appearance': self.current,
         })
+        self._persist()
         return self.state()
 
     def _require(self) -> ContentScheduler:
@@ -99,29 +118,92 @@ class BroadcastController:
     # —— 查询 ——
 
     def state(self) -> dict:
-        if self.scheduler is None:
-            return {'active': False, 'startedAt': None}
-        return {
-            'active': True,
-            'startedAt': self.started_at,
-            'packIds': self.pack_ids,
-            'strategy': self.strategy,
-            'seed': self.seed,
-            'mode': self.scheduler.mode,
-            'loop': self.scheduler.loop,
-            'seq': self.seq,
-            'current': self.current,
-            'progress': self.scheduler.progress(),
-        }
+        with self._lock:
+            if self.scheduler is None:
+                return {'active': False, 'startedAt': None}
+            return {
+                'active': True,
+                'startedAt': self.started_at,
+                'packIds': self.pack_ids,
+                'strategy': self.strategy,
+                'seed': self.seed,
+                'mode': self.scheduler.mode,
+                'loop': self.scheduler.loop,
+                'seq': self.seq,
+                'current': self.current,
+                'progress': self.scheduler.progress(),
+            }
 
     def plan(self, count: Optional[int] = None) -> dict:
         """预览出场序列（不改动实时状态）。"""
-        sched = self._require()
-        return {
-            'packIds': self.pack_ids,
-            'strategy': self.strategy,
-            'mode': sched.mode,
-            'loop': sched.loop,
-            'appearances': sched.plan(count),
-            'progress': sched.progress(),
-        }
+        with self._lock:
+            sched = self._require()
+            return {
+                'packIds': self.pack_ids,
+                'strategy': self.strategy,
+                'mode': sched.mode,
+                'loop': sched.loop,
+                'appearances': sched.plan(count),
+                'progress': sched.progress(),
+            }
+
+    # —— 持久化 / 恢复 ——
+
+    def _persist(self):
+        try:
+            if self.scheduler is None:
+                db.del_state(_STATE_KEY)
+                return
+            db.set_state(_STATE_KEY, {
+                'active': True,
+                'startedAt': self.started_at,
+                'packIds': self.pack_ids,
+                'strategy': self.strategy,
+                'seed': self.seed,
+                'mode': self.scheduler.mode,
+                'loop': self.scheduler.loop,
+                'seq': self.seq,
+                'current': self.current,
+                'scheduler': self.scheduler.snapshot_state(),
+            })
+        except Exception as exc:  # 落库失败不能拖垮直播流程，但要留下痕迹
+            print('[printcast] 广播状态落库失败：%s' % exc, file=sys.stderr)
+
+    def restore(self) -> bool:
+        """从 runtime_state 恢复上次广播（配置 + 进度 + 调度器游标）。
+
+        内容包已被删除或快照损坏时静默放弃恢复，由 autoStart 或用户手动开播。
+        出场历史（SceneRelay 事件）不跨重启，但当前角色与进度会保留。
+        """
+        try:
+            snap = db.get_state(_STATE_KEY)
+            if not isinstance(snap, dict) or not snap.get('active'):
+                return False
+            pack_ids = snap.get('packIds') or []
+            packs = []
+            for pid in pack_ids:
+                pack = storage.get_pack(pid) if storage.valid_pack_id(pid) else None
+                if pack is None:
+                    return False
+                packs.append(pack)
+            if not packs:
+                return False
+            sched = ContentScheduler(packs, strategy=snap.get('strategy') or 'concat',
+                                     seed=snap.get('seed'))
+            if snap.get('mode') in ('sequence', 'weighted', 'trigger'):
+                sched.mode = snap['mode']
+            if snap.get('loop') is not None:
+                sched.loop = bool(snap['loop'])
+            sched.restore_state(snap.get('scheduler') or {})
+        except Exception as exc:
+            print('[printcast] 广播状态恢复失败，将从头开播：%s' % exc, file=sys.stderr)
+            return False
+        with self._lock:
+            self.scheduler = sched
+            self.pack_ids = list(pack_ids)
+            self.strategy = snap.get('strategy') or 'concat'
+            self.seed = normalize_seed(snap.get('seed'))
+            self.current = snap.get('current')
+            self.seq = int(snap.get('seq') or 0)
+            self.started_at = snap.get('startedAt')
+        return True

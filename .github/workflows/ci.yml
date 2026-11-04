@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 安装测试依赖
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+
+      - name: Python 回归（数据层 / API / 服务 / 调度）
+        run: python -m pytest --basetemp="tests-tmp/pytest-ci"
+
+      - name: Node 回归（渲染层 / 采集层 / 页面契约）
+        working-directory: tests
+        run: node --test *.test.mjs
+
+      - name: 两个渲染模块语法检查
+        run: |
+          node --check web/app.zh.mjs
+          node --check web/app.en.mjs
+
+      - name: 原始示例包落库 + 数据层自检
+        env:
+          # 用临时数据目录，绝不改写仓库里入库的 data/packs/*.json。
+          PRINTCAST_DATA_DIR: ${{ runner.temp }}/printcast-data
+        run: |
+          python -m printcast --seed --overwrite
+          python -m printcast --db info
+          python -m printcast --db verify
+          python -m printcast --schedule ming-emperors --count 5
+
+      - name: 构建工作台并确认产物无漂移
+        run: |
+          bash scripts/build-studio.sh
+          git diff --exit-code -- web/studio-dist/

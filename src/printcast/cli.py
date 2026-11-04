@@ -34,9 +34,11 @@ def parse_args(argv=None):
     parser.add_argument('--scene-orient', default='landscape', help=argparse.SUPPRESS)
     # —— 内容包 / 出场调度 ——
     parser.add_argument('--seed', action='store_true',
-                        help='把内置示例内容包（明朝十六帝 + 四故事包）写入 data/packs 后退出')
+                        help='把内置原始示例包（明朝十六帝 + 四故事包）写入 SQLite 并同步落盘 JSON')
     parser.add_argument('--overwrite', action='store_true',
-                        help='配合 --seed：覆盖已存在的内容包（默认跳过，避免覆盖用户数据）')
+                        help='配合 --seed / --db import：覆盖已存在的内容包（默认跳过）')
+    parser.add_argument('--db', choices=['info', 'verify', 'import', 'export'],
+                        help='数据库维护：info 状态 / verify 自检 / import 从 JSON 导入 / export 导出 JSON')
     parser.add_argument('--schedule', nargs='*', metavar='PACK',
                         help='预览指定内容包的出场顺序后退出；不跟包名则列出全部可用包')
     parser.add_argument('--strategy', default='concat',
@@ -106,9 +108,47 @@ def _run_schedule(args):
           % (sched.mode, sched.strategy, sched.loop))
     print('%-4s %-18s %-10s %s' % ('序', '名称', '来自包', '播报文案'))
     print('-' * 60)
-    for ap in sched.plan(args.count):
+    # plan() 返回的是预览字典（无 index 字段），序号由这里按输出顺序生成。
+    # 早期直接读 ap['index'] 会让 --schedule 命令必崩 KeyError。
+    for seq, ap in enumerate(sched.plan(args.count), 1):
         print('%-4s %-18s %-10s %s'
-              % (ap['index'] + 1, ap['name'], ap['packId'], (ap['speech'] or '')[:24]))
+              % (seq, ap['name'], ap['packId'], (ap['speech'] or '')[:24]))
+
+
+def _run_db(action, overwrite=False):
+    """SQLite 维护命令：状态 / 自检 / JSON 导入导出。"""
+    from . import db
+
+    if action == 'info':
+        info = db.stats()
+        print('数据源   :', info['backend'], '· schema v%d' % info['schemaVersion'])
+        print('库文件   :', info['dbPath'], '（%d 字节）' % info['sizeBytes'])
+        print('完整性   :', info['integrity'])
+        print('表行数   :', ', '.join('%s=%d' % kv for kv in info['tables'].items()))
+        if info['migratedFrom']:
+            print('首次迁移 :', info['migratedAt'], info['migratedFrom'])
+        return 0
+    if action == 'verify':
+        result = db.verify()
+        print('完整性   :', '通过' if result['ok'] else '失败')
+        for line in result['checks']:
+            print('  ·', line)
+        for err in result['errors']:
+            print('  !', err, file=sys.stderr)
+        return 0 if result['ok'] else 1
+    if action == 'import':
+        result = db.import_json(overwrite=overwrite)
+        print('从 data/ JSON 导入：内容包 %d，跳过 %d，设置 %d，媒体 %d'
+              % (result['packs'], result['skipped'],
+                 result['settings'], result['media']))
+        for err in result['errors']:
+            print('  !', err, file=sys.stderr)
+        return 1 if result['errors'] else 0
+    result = db.export_json()
+    print('已导出 JSON 镜像：内容包 %d 个，媒体 %d 条，设置 %s'
+          % (len(result['packs']), result['media'],
+             '有' if result['settings'] else '无'))
+    return 0
 
 
 def _serve_only(url, args):
@@ -129,15 +169,23 @@ def _serve_only(url, args):
 def main(argv=None):
     args = parse_args(argv)
 
+    if args.db:
+        return _run_db(args.db, args.overwrite)
+
     if args.seed:
-        from . import samples
+        from . import db, samples
+        # 先确保库已建好并完成首次迁移，避免 --seed 与迁移互相覆盖。
+        db.ensure_db()
         result = samples.seed_builtin_packs(overwrite=args.overwrite)
-        print('示例内容包已写入 data/packs/：')
+        print('原始示例包已写入 SQLite，并同步落盘到 data/packs/：')
         print('  新增 :', result['written'] or '（无）')
         print('  跳过 :', result['skipped'] or '（无）')
         if result['errors']:
             print('  失败 :', result['errors'])
-        return 0
+        info = db.stats()
+        print('  库内 : packs=%d characters=%d · %s'
+              % (info['tables']['packs'], info['tables']['characters'], info['dbPath']))
+        return 1 if result['errors'] else 0
 
     if args.schedule is not None:
         _run_schedule(args)

@@ -5,16 +5,19 @@
 - 所有展示页（web/index.html、broadcast.html、live-view.html、app.zh.mjs）只 GET，不 PUT；
 - 这样「参数由控制台统一设置，其它端只负责展示」才成立。
 
-持久化沿用 storage 的约束：纯 stdlib、原子写、路径收敛到 data/ 之内。
+持久化：SQLite（db.py）是运行时唯一数据源，深合并与净化在单个写事务里完成，
+消除了早期「读 JSON → 合并 → 覆盖写」的并发丢更新；同时尽力同步一份
+data/settings.json 作为可读的分发 / 备份镜像。纯 stdlib，零第三方依赖。
 """
 from __future__ import annotations
 
+import copy
 import json
-import os
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from . import config
+from . import config, db
 
 # —— 默认配置（也是 schema 的唯一事实来源；工作台据此渲染表单）——
 DEFAULT_SETTINGS = {
@@ -69,6 +72,7 @@ _SECTIONS = tuple(DEFAULT_SETTINGS.keys())
 _COLOR_RE = re.compile(r'^#[0-9a-fA-F]{3,8}$')
 # 只放行 http(s) 与站内相对路径 / 锚点；拒绝 javascript:、data: 等可执行协议。
 _LINK_RE = re.compile(r'^(?:https?://|/|\./|\.\./|#|\?)', re.I)
+_DANGEROUS_SCHEMES = ('javascript:', 'data:', 'vbscript:', 'file:', 'blob:')
 
 
 def _as_bool(value, default):
@@ -101,18 +105,41 @@ def _as_int(value, default, minimum=0, maximum=None):
 
 
 def settings_path() -> Path:
+    """JSON 备份镜像路径（DB 才是运行时数据源）。"""
     return config.DATA_DIR / 'settings.json'
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
-    """深合并：override 的标量 / 列表覆盖 base；嵌套 dict 递归。"""
-    out = dict(base)
+    """深合并：override 的标量 / 列表覆盖 base；嵌套 dict 递归。
+
+    必须深拷贝 base —— 早期用 `dict(base)` 浅拷贝，净化函数原地写 nested dict
+    会把用户值写回模块级 DEFAULT_SETTINGS，导致「恢复出厂设置」被污染。
+    """
+    out = copy.deepcopy(base)
     for key, value in (override or {}).items():
         if isinstance(value, dict) and isinstance(out.get(key), dict):
             out[key] = _deep_merge(out[key], value)
         else:
-            out[key] = value
+            out[key] = copy.deepcopy(value)
     return out
+
+
+def _safe_href(href: str):
+    """链接协议白名单：http(s) 绝对地址，或站内相对路径 / 锚点；其余一律拒绝。
+
+    旧实现用 `href.startswith('http')` 兜底，形如 `httpjavascript:alert(1)` 能绕过。
+    """
+    if not href or len(href) > 256:
+        return None
+    low = href.lower()
+    if low.startswith(_DANGEROUS_SCHEMES):
+        return None
+    if low.startswith(('http://', 'https://')):
+        parts = urlsplit(href)
+        return href if parts.scheme.lower() in ('http', 'https') and parts.netloc else None
+    if low.startswith('//'):
+        return None  # 协议相对 URL 可能指向任意站点，不纳入白名单
+    return href if _LINK_RE.match(href) else None
 
 
 def _sanitize_settings(data: dict) -> dict:
@@ -123,20 +150,17 @@ def _sanitize_settings(data: dict) -> dict:
         b['accent'] = DEFAULT_SETTINGS['branding']['accent']
     links = b.get('links')
     if not isinstance(links, list):
-        b['links'] = DEFAULT_SETTINGS['branding']['links']
+        b['links'] = copy.deepcopy(DEFAULT_SETTINGS['branding']['links'])
     else:
         clean = []
         for item in links:
             if not isinstance(item, dict):
                 continue
-            href = str(item.get('href', '') or '')
+            href = _safe_href(str(item.get('href', '') or ''))
+            if href is None:
+                continue
             label = str(item.get('label', '') or '')[:40]
-            # 拒绝 javascript: 等危险协议，其余（相对路径 / http(s) / 锚点）放行。
-            if not _LINK_RE.match(href) and not href.startswith('http'):
-                continue
-            if href.lower().startswith('javascript:'):
-                continue
-            clean.append({'label': label, 'href': href[:256]})
+            clean.append({'label': label, 'href': href})
         b['links'] = clean
     # 布尔与数值收口，避免控制台误传字符串（'false' 会被 bool() 判成真）导致前端判断失灵。
     bool_fields = (
@@ -169,39 +193,33 @@ def _sanitize_settings(data: dict) -> dict:
     return {k: v for k, v in data.items() if k in _SECTIONS}
 
 
+def _mirror():
+    """尽力同步 settings.json / media/index.json 备份；失败不影响业务响应。"""
+    try:
+        db.export_json(only_ids=[], write_meta=True)
+    except Exception:  # noqa: BLE001 — 备份是 best-effort
+        pass
+
+
 def load_settings() -> dict:
-    """读取配置；文件缺失或损坏时返回默认配置（并顺手落盘一次，保证展示端总有稳定文档）。"""
-    path = settings_path()
-    data: dict = {}
-    if path.is_file():
-        try:
-            loaded = json.loads(path.read_text(encoding='utf-8'))
-            if isinstance(loaded, dict):
-                data = loaded
-        except (OSError, ValueError):
-            data = {}
-    if not path.is_file():
+    """读取配置；库里缺失或文档损坏时写入净化后的默认配置并落盘一次。"""
+    doc = db.get_settings_doc()
+    if doc is None:
         return save_settings({})
-    return _sanitize_settings(data)
+    return _sanitize_settings(doc)
 
 
 def save_settings(partial: dict) -> dict:
-    """合并并持久化控制台提交的部分配置，返回完整配置。"""
-    current = load_settings() if settings_path().is_file() else dict(DEFAULT_SETTINGS)
-    merged = _sanitize_settings(_deep_merge(current, partial or {}))
-    path = settings_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + '.tmp-' + os.urandom(4).hex())
-    tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding='utf-8')
-    os.replace(tmp, path)
+    """在单个写事务里合并、净化并持久化，返回完整配置。"""
+    def mutate(current):
+        base = current if isinstance(current, dict) else {}
+        return _sanitize_settings(_deep_merge(base, partial or {}))
+
+    merged = db.update_settings(mutate)
+    _mirror()
     return merged
 
 
 def reset_settings() -> dict:
-    path = settings_path()
-    if path.exists():
-        try:
-            path.unlink()
-        except OSError:
-            pass
+    db.delete_settings_doc()
     return load_settings()

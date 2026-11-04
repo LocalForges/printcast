@@ -66,17 +66,18 @@ test('getAudit 编码筛选参数并回传 entries / stats', async () => {
   } finally { restore(); }
 });
 
-test('clearAudit 走 DELETE，broadcast start 保留数字 seed', async () => {
+test('clearAudit 走 DELETE，broadcast start 原样透传 seed', async () => {
   const { calls, restore } = withFetch(() => ({ ok: true }));
   try {
     await api.clearAudit();
     assert.equal(calls[0].init.method, 'DELETE');
     assert.equal(calls[0].url, '/__api/audit');
-    await api.broadcast('start', { packs: ['a'], seed: 20261104, loop: true });
+    await api.broadcast('start', { packs: ['a'], seed: '9007199254740993', loop: true });
     const body = JSON.parse(calls[1].init.body);
     assert.equal(body.action, 'start');
-    assert.equal(body.seed, 20261104);
-    assert.equal(typeof body.seed, 'number', 'seed 必须是 number，否则与 schedule 的 int 解析不一致');
+    // seed 由后端 normalize_seed 单点归一化；前端保持字符串，避免 JS 双精度丢位。
+    assert.equal(body.seed, '9007199254740993');
+    assert.equal(typeof body.seed, 'string');
     assert.equal(body.loop, true);
   } finally { restore(); }
 });
@@ -92,4 +93,33 @@ test('savePack / importData 的请求形状', async () => {
     assert.equal(calls[1].url, '/__api/import?commit=1');
     assert.equal(calls[1].init.method, 'POST');
   } finally { restore(); }
+});
+
+test('getDbInfo 是 /__api/db 的只读 GET', async () => {
+  const { calls, restore } = withFetch(() => ({
+    ok: true, db: { backend: 'sqlite', tables: { packs: 5 } },
+  }));
+  try {
+    const data = await api.getDbInfo();
+    assert.equal(calls[0].init.method, 'GET');
+    assert.equal(calls[0].url, '/__api/db');
+    assert.equal(data.db.tables.packs, 5);
+  } finally { restore(); }
+});
+
+test('getAudit 把「仅看失败」下推成后端查询参数', async () => {
+  const { calls, restore } = withFetch(() => ({ ok: true, entries: [], stats: {} }));
+  try {
+    await api.getAudit({ action: 'pack.save', onlyFailed: true });
+    assert.ok(calls[0].url.includes('onlyFailed=1'), calls[0].url);
+    assert.ok(calls[0].url.includes('action=pack.save'), calls[0].url);
+  } finally { restore(); }
+});
+
+test('getTemplate 在 404 时抛错，不把错误 JSON 当模板下载', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 404, statusText: 'Not Found' });
+  try {
+    await assert.rejects(() => api.getTemplate('csv'), /HTTP 404/);
+  } finally { globalThis.fetch = original; }
 });

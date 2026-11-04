@@ -61,7 +61,10 @@ export const api = {
   scheduleQuery,
   getSchema: () => req('GET', '/schema'),
   getTemplate: (fmt) =>
-    fetch('/__api/template.' + fmt).then((r) => r.blob()),
+    fetch('/__api/template.' + fmt).then((r) => {
+      if (!r.ok) throw new Error('模板下载失败：HTTP ' + r.status);
+      return r.blob();
+    }),
   listPacks: () => req('GET', '/packs'),
   getPack: (id) => req('GET', '/packs/' + id),
   savePack: (pack) => req('POST', '/packs', { json: pack }),
@@ -74,13 +77,17 @@ export const api = {
   deleteMedia: (id) => req('DELETE', '/media/' + id),
   previewSchedule: (params) => req('GET', scheduleQuery(params)),
   // 本机操作日志（控制台专属，展示端不调用）：读 / 清空。
-  getAudit: ({ limit = 100, action = '', q = '' } = {}) => {
+  // 筛选交给后端 SQL，避免「先取 100 条再前端过滤」把更早的失败记录截掉。
+  getAudit: ({ limit = 100, action = '', q = '', onlyFailed = false } = {}) => {
     const parts = []
       .concat(limit ? ['limit=' + encodeURIComponent(limit)] : [])
       .concat(action ? ['action=' + encodeURIComponent(action)] : [])
-      .concat(q ? ['q=' + encodeURIComponent(q)] : []);
+      .concat(q ? ['q=' + encodeURIComponent(q)] : [])
+      .concat(onlyFailed ? ['onlyFailed=1'] : []);
     return req('GET', '/audit' + (parts.length ? '?' + parts.join('&') : ''));
   },
+  // 数据层状态（SQLite 表行数 / 完整性 / 首次迁移记录），只读。
+  getDbInfo: () => req('GET', '/db'),
   clearAudit: () => req('DELETE', '/audit'),
   // 出场广播控制：POST /__api/broadcast
   broadcast: (action, body = {}) => req('POST', '/broadcast', { json: { action, ...body } }),

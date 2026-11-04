@@ -30,7 +30,7 @@ from .config import (
     HTTP_PORT, HTTP_PORT_FALLBACKS, IS_MAC, LIVE_DEBUG_PORT, PROFILE_DIRS, ROOT,
     find_browser,
 )
-from . import api, audit, config, settings as settings_module, storage
+from . import api, audit, config, db, settings as settings_module, storage
 from .broadcast import BroadcastController, BroadcastError
 from .probe import bridge_status, listening, local_get, wait_bridge
 from .relay import SceneRelay
@@ -45,6 +45,19 @@ SCENE_SIZES = {
 
 ROOM_RE = re.compile(r'\d{5,25}')
 SCENE_PATH_RE = re.compile(r'/[A-Za-z0-9_\-]+/[A-Za-z0-9_\-]+\.html\?scene=1')
+
+# 广播端点只认精确路径与白名单子动作，避免 /__api/broadcasting 之类误命中。
+_BROADCAST_SUBS = frozenset(('', 'plan', 'start', 'next', 'trigger', 'reset'))
+
+
+def broadcast_sub(clean):
+    if clean == '/__api/broadcast':
+        return ''
+    prefix = '/__api/broadcast/'
+    if clean.startswith(prefix):
+        sub = clean[len(prefix):]
+        return sub if sub in _BROADCAST_SUBS else None
+    return None
 
 # —— 本机操作日志埋点 ——
 # 只记录「控制台发起、服务端实际执行」的写动作。展示端信令（/__scene-message）
@@ -64,10 +77,11 @@ _AUDIT_ACTIONS = {
 
 
 def audit_write(action, target='', ok=True, detail='', status=200):
-    """日志写入绝不能拖垮业务请求；失败静默跳过。"""
+    """日志写入绝不能拖垮业务请求；失败留一行 stderr，绝不静默吞掉。"""
     try:
         return audit.record(action, target, ok, detail, status)
-    except Exception:
+    except Exception as exc:
+        print('[printcast] 操作日志写入失败：%s' % exc, file=sys.stderr)
         return None
 
 
@@ -76,6 +90,10 @@ def audit_api_call(method, path, status):
     parts = [p for p in path.split('?', 1)[0].split('/') if p]
     resource = parts[1] if len(parts) > 1 else ''
     target = parts[2] if len(parts) > 2 else ''
+    # DELETE /__api/audit 已由 api.dispatch 原子完成「清空 + 补记 audit.clear」，
+    # 这里再记一次会产生两条记录，也破坏「清空后只剩一条」的承诺。
+    if resource == 'audit' and method == 'DELETE':
+        return
     action = _AUDIT_ACTIONS.get((resource, method)) or \
         (resource or 'api') + '.' + method.lower()
     ok = 200 <= status < 400
@@ -152,21 +170,35 @@ class _BridgeKeeper:
 
 
 def auto_start_broadcast(broadcast):
-    """控制台设置里 b`autoStart` 为真时，服务启动即按默认参数开播。
+    """控制台设置里 autoStart 为真时，服务启动即按默认参数开播。
 
-    这属于「后端（控制台）功能」：配置由 /__api/settings 提供，展示端不参与。
-    内容包缺失或参数非法时静默跳过，绝不让设置问题拖垮 HTTP 服务启动。
+    优先保留从 SQLite 恢复的上次广播（含 seed 与进度）；只有没恢复成功时才
+    按设置重新开播，并沿用上次同组内容包的 seed，避免「重启后序列不可复现」。
+    配置问题不允许拖垮 HTTP 服务启动，但要留痕，不能静默吞掉。
     """
+    state_fn = getattr(broadcast, 'state', None)
+    if callable(state_fn):
+        try:
+            if state_fn().get('active'):
+                return None
+        except Exception:
+            pass
     try:
         cfg = settings_module.load_settings().get('broadcast') or {}
         if not cfg.get('autoStart') or not cfg.get('defaultPacks'):
             return None
+        last = db.get_state('broadcast') or {}
+        seed = (last.get('seed')
+                if list(last.get('packIds') or []) == list(cfg['defaultPacks']) else None)
         return broadcast.start(
             pack_ids=cfg['defaultPacks'],
             strategy=cfg.get('strategy') or 'concat',
             mode=cfg.get('mode') or None,
+            seed=seed,
             loop=cfg.get('loop'))
-    except Exception:  # 设置问题绝不能拖垮 HTTP 服务启动
+    except Exception as exc:  # 设置问题绝不能拖垮 HTTP 服务启动
+        print('[printcast] autoStart 开播失败：%s' % exc, file=sys.stderr)
+        audit_write('broadcast.autostart', '', False, str(exc)[:200], 500)
         return None
 
 
@@ -222,8 +254,31 @@ def make_handler(active_port):
     started_at = time.time()
     # bridge_status() 会逐个端口探测（每次最多 1.5s）。控制台 2s 轮询一次，
     # 若每次都全量扫描会堆积线程，因此给探测结果加 3s TTL 缓存。
-    bridge_cache = {'at': 0.0, 'value': {'ok': False}}
+    bridge_cache = {'at': 0.0, 'value': {'ok': False}, 'running': False}
     bridge_lock = threading.Lock()
+
+    def bridge_snapshot():
+        """慢探测放在锁外 + 单飞：TTL 内取快照，探测期间并发请求不排队。
+
+        早期实现在锁内直接调用 bridge_status()，多标签页轮询会串行等待
+        1.5s×N，恰好把「避免堆积线程」的初衷反过来变成队头阻塞。
+        """
+        with bridge_lock:
+            now = time.monotonic()
+            if now - bridge_cache['at'] <= 3.0 or bridge_cache['running']:
+                return dict(bridge_cache['value'])
+            bridge_cache['running'] = True
+            bridge_cache['at'] = now
+        try:
+            value = bridge_status()
+        except Exception as exc:
+            print('[printcast] 数据桥探测失败：%s' % exc, file=sys.stderr)
+            value = {'ok': False}
+        with bridge_lock:
+            bridge_cache['value'] = value
+            bridge_cache['at'] = time.monotonic()
+            bridge_cache['running'] = False
+        return dict(value)
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
@@ -265,7 +320,10 @@ def make_handler(active_port):
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Content-Length', str(len(data)))
             self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
             # do_GET 的路由循环靠「返回值非 None」判断是否已处理。若这里返回 None，
             # 响应发出后仍会掉进 super().do_GET() 的静态回退，再叠一个 404，
             # 浏览器连接被污染并刷出 OSError 41。必须返回哨兵值。
@@ -315,9 +373,14 @@ def make_handler(active_port):
             if not self._guard():
                 return self._deny()
             parsed = urlparse(self.path)
-            is_upload = (parsed.path.rstrip('/') == '/__api/media'
-                         and self.command == 'POST')
+            # 按 URL 段判断上传，不再用「精确路径字符串」——早期 rstrip('/')
+            # 与 api.dispatch 的前缀匹配口径不一致，带尾斜杠时走错限流分支。
+            segments = [p for p in parsed.path.split('/') if p]
+            is_upload = (segments == ['__api', 'media'] and self.command == 'POST')
             limit = config.MAX_MEDIA_BYTES if is_upload else config.MAX_JSON_BYTES
+            if str(self.headers.get('Transfer-Encoding', '')).lower() == 'chunked':
+                return self._json(411, {'ok': False,
+                                        'error': '不支持 chunked 请求体，请提供 Content-Length'})
             try:
                 length = int(self.headers.get('Content-Length', '0'))
             except (TypeError, ValueError):
@@ -327,14 +390,18 @@ def make_handler(active_port):
                                         'error': '请求体超过 %d 字节上限' % limit})
             body = self.rfile.read(length) if length else b''
             headers = {k.lower(): v for k, v in self.headers.items()}
-            response = api.dispatch(self.command, parsed.path,
-                                    parse_qs(parsed.query), headers, body)
+            try:
+                response = api.dispatch(self.command, parsed.path,
+                                        parse_qs(parsed.query), headers, body)
+            except Exception as exc:
+                # 数据目录不可写 / SQLite 异常等必须变成 500 JSON，不能让异常
+                # 冒出 Handler 导致客户端「没有任何 HTTP 响应」。
+                print('[printcast] API 分发异常：%s' % exc, file=sys.stderr)
+                return self._json(500, {'ok': False, 'error': '服务端内部错误'})
             if response is None:
                 if self.command in ('POST', 'PUT', 'DELETE'):
                     audit_api_call(self.command, parsed.path, 404)
                 return self._json(404, {'ok': False, 'error': '未知的 API 路径'})
-            # 先执行、后记录：清空日志（DELETE /__api/audit）会留下一条
-            # 「audit.clear」记录，谁在什么时间清过日志仍可回溯。
             if self.command in ('POST', 'PUT', 'DELETE'):
                 audit_api_call(self.command, parsed.path, response.status)
             self.send_response(response.status)
@@ -345,36 +412,49 @@ def make_handler(active_port):
             self.end_headers()
             try:
                 self.wfile.write(response.body)
-            except (BrokenPipeError, ConnectionResetError):
+            except (BrokenPipeError, ConnectionResetError, OSError):
                 pass
+            return True
 
         def _is_api(self):
             return self.path.split('?', 1)[0].startswith('/__api/')
 
         # —— 出场广播（有状态，复用闭包里的 relay / broadcast）——
-        def _broadcast_call(self):
+        def _broadcast_call(self, sub):
             if not self._guard():
                 return self._deny()
-            parsed = urlparse(self.path)
-            prefix = '/__api/broadcast'
-            sub = parsed.path[len(prefix):].strip('/')
             q = self._query()
             if self.command == 'GET':
                 if sub == 'plan':
                     if broadcast.scheduler is None:
                         return self._json(400, {'ok': False, 'error': '尚未开始广播'})
-                    count = int(q['count'][0]) if 'count' in q else None
+                    try:
+                        count = int(q['count'][0]) if 'count' in q else None
+                        if count is not None:
+                            count = max(1, min(count, 300))
+                    except (ValueError, TypeError):
+                        return self._json(400, {'ok': False, 'error': 'count 必须是整数'})
                     return self._json(200, {'ok': True, **broadcast.plan(count)})
                 return self._json(200, {'ok': True, 'broadcast': broadcast.state()})
 
             # POST：action 来自 URL 子路径或 JSON 体的 action 字段。
+            if str(self.headers.get('Transfer-Encoding', '')).lower() == 'chunked':
+                return self._json(411, {'ok': False, 'error': '不支持 chunked 请求体'})
             try:
                 length = int(self.headers.get('Content-Length', '0'))
-                body = json.loads(self.rfile.read(length)) if length else {}
-            except (ValueError, KeyError, TypeError):
-                body = {}
+            except (TypeError, ValueError):
+                length = 0
+            if length < 0 or length > config.MAX_JSON_BYTES:
+                return self._json(413, {'ok': False, 'error': '请求体超过上限'})
+            raw = self.rfile.read(length) if length else b''
+            try:
+                body = json.loads(raw) if raw else {}
+            except (ValueError, UnicodeDecodeError):
+                # 早期把畸形 JSON 静默变成 {}，POST 到根路径会退化成 action='next'
+                # 而悄悄推进一位出场；现在明确报 400。
+                return self._json(400, {'ok': False, 'error': '请求体不是合法 JSON'})
             if not isinstance(body, dict):
-                body = {}
+                return self._json(400, {'ok': False, 'error': '请求体必须是 JSON 对象'})
             action = (body.get('action') or sub or 'next')
             audit_target = (body.get('charId') or body.get('char_id')
                             or ','.join(str(x) for x in (body.get('packs')
@@ -395,13 +475,18 @@ def make_handler(active_port):
                 elif action == 'reset':
                     result = broadcast.reset()
                 elif action == 'plan':
-                    result = broadcast.plan(body.get('count'))
+                    raw_count = body.get('count')
+                    try:
+                        count = max(1, min(int(raw_count), 300)) if raw_count is not None else None
+                    except (TypeError, ValueError):
+                        return self._json(400, {'ok': False, 'error': 'count 必须是整数'})
+                    result = broadcast.plan(count)
                 else:
                     audit_write('broadcast.' + str(action), audit_target,
                                 False, '未知的广播动作', 400)
                     return self._json(400, {'ok': False,
                                             'error': '未知的广播动作：%s' % action})
-            except BroadcastError as exc:
+            except (BroadcastError, ValueError, TypeError) as exc:
                 audit_write('broadcast.' + str(action), audit_target,
                             False, str(exc), 400)
                 return self._json(400, {'ok': False, 'error': str(exc)})
@@ -413,23 +498,16 @@ def make_handler(active_port):
         # 打印队列长度、帧率等属于展示端内存，后端不臆造；控制台只读真实存在的
         # 状态，避免「展示端反向汇报」破坏 console 写 / display 读 的边界。
         def _console_status(self):
-            if self.path.split('?', 1)[0] != '/__api/status':
+            if urlparse(self.path).path != '/__api/status':
                 return None
             if not self._guard():
                 return self._deny()
-            with bridge_lock:
-                now = time.monotonic()
-                if now - bridge_cache['at'] > 3.0:
-                    try:
-                        bridge_cache['value'] = bridge_status()
-                    except Exception:
-                        bridge_cache['value'] = {'ok': False}
-                    bridge_cache['at'] = now
-                bridge_state = dict(bridge_cache['value'])
+            bridge_state = bridge_snapshot()
             try:
                 counts = {'packs': len(storage.list_packs()),
                           'media': len(storage.list_media())}
-            except OSError:
+            except Exception as exc:
+                print('[printcast] 资产计数失败：%s' % exc, file=sys.stderr)
                 counts = {'packs': 0, 'media': 0}
             return self._json(200, {
                 'ok': True,
@@ -442,11 +520,13 @@ def make_handler(active_port):
 
         # —— POST ——
         def do_POST(self):
-            if self.path.split('?', 1)[0].startswith('/__api/broadcast'):
-                return self._broadcast_call()
+            clean = urlparse(self.path).path
+            sub = broadcast_sub(clean)
+            if sub is not None:
+                return self._broadcast_call(sub)
             if self._is_api():
                 return self._api_call()
-            if self.path != '/__scene-message' or not self._guard():
+            if clean != '/__scene-message' or not self._guard():
                 return self._deny()
             try:
                 length = int(self.headers.get('Content-Length', '0'))
@@ -466,14 +546,16 @@ def make_handler(active_port):
 
         # —— GET ——
         def do_GET(self):
+            clean = urlparse(self.path).path
             # 只读存活探针，无需 same-origin 校验：供 ensure_server 判断端口是否
-            # 已被本程序的另一实例占用（历史上靠 HTML 里的营销字符串，永远不命中）。
-            if self.path == '/__health':
-                return self._json(200, {'service': 'printcast', 'root': str(ROOT)})
+            # 已被本程序的另一实例占用。不回显本机绝对路径，避免信息泄露。
+            if clean == '/__health':
+                return self._json(200, {'service': 'printcast', 'ok': True})
             # 出场广播与控制台总览（有状态，需接入 relay / broadcast / bridge
             # 闭包）优先于通用 API 分发，否则会被 dispatch 当成未知路径返回 404。
-            if self.path.split('?', 1)[0].startswith('/__api/broadcast'):
-                return self._broadcast_call()
+            sub = broadcast_sub(clean)
+            if sub is not None:
+                return self._broadcast_call(sub)
             status_response = self._console_status()
             if status_response is not None:
                 return status_response
@@ -501,14 +583,14 @@ def make_handler(active_port):
             return self._html(200, _STUDIO_NOT_BUILT_HTML)
 
         def _bridge_status(self):
-            if self.path != '/__bridge-status':
+            if urlparse(self.path).path != '/__bridge-status':
                 return None
             if not self._guard():
                 return self._json(403, {'ok': False})
-            return self._json(200, bridge_status())
+            return self._json(200, bridge_snapshot())
 
         def _scene_events(self):
-            if not self.path.startswith('/__scene-events?'):
+            if urlparse(self.path).path != '/__scene-events':
                 return None
             if not self._guard():
                 return self._deny()
@@ -521,7 +603,7 @@ def make_handler(active_port):
                 return self._json(400, {'error': 'invalid cursor'})
 
         def _open_live(self):
-            if not self.path.startswith('/__open-live'):
+            if urlparse(self.path).path != '/__open-live':
                 return None
             if not self._guard():
                 return self._json(403, {'ok': False, 'error': 'forbidden'})
@@ -546,7 +628,7 @@ def make_handler(active_port):
             return self._json(200, {'ok': True})
 
         def _start_bridge(self):
-            if not self.path.startswith('/__start-bridge'):
+            if urlparse(self.path).path != '/__start-bridge':
                 return None
             if not self._guard():
                 return self._json(403, {'ok': False, 'error': 'forbidden'})
@@ -566,7 +648,7 @@ def make_handler(active_port):
             return self._json(200 if result.get('ok') else 500, result)
 
         def _stop_bridge(self):
-            if not self.path.startswith('/__stop-bridge'):
+            if urlparse(self.path).path != '/__stop-bridge':
                 return None
             if not self._guard():
                 return self._json(403, {'ok': False, 'error': 'forbidden'})
@@ -575,7 +657,7 @@ def make_handler(active_port):
             return self._json(200, {'ok': True})
 
         def _open_scene(self):
-            if not self.path.startswith('/__open-scene'):
+            if urlparse(self.path).path != '/__open-scene':
                 return None
             if not self._guard():
                 return self._json(403, {'ok': False, 'error': 'forbidden'})

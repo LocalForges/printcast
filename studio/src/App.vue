@@ -54,13 +54,12 @@ function downloadJson(filename, value) {
   a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
 }
-// pure 数字 seed 在 /__api/schedule 里被后端转成 int，而 JSON body 里的
-// "123" 仍是字符串 → random.Random('123') 与 Random(123) 序列不同。统一收口，
-// 保证「预演的序列」与「按此配置开播」真的是同一条。
+// seed 一律以字符串交给后端，由后端 normalize_seed() 单点归一化。
+// 早期前端把纯数字转 Number：一是 URL 与 JSON 两条入口类型不一致会让
+// 「预演序列 ≠ 按此配置开播」，二是 JS 双精度在 >2^53 时会丢精度。
 function normalizeSeed(value) {
   const s = String(value === undefined || value === null ? '' : value).trim();
-  if (!s) return undefined;
-  return /^\d+$/.test(s) ? Number(s) : s;
+  return s || undefined;
 }
 async function copyText(text) {
   try {
@@ -83,10 +82,12 @@ const packs = ref([]);
 const media = ref([]);
 const message = ref('');
 const error = ref('');
+let flashTimer = null;
 function flash(msg, isError = false) {
   if (isError) { error.value = msg; message.value = ''; }
   else { message.value = msg; error.value = ''; }
-  setTimeout(() => { message.value = ''; error.value = ''; }, 4000);
+  if (flashTimer) clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { message.value = ''; error.value = ''; }, 4000);
 }
 
 // —— 后端连接与总览状态 ——
@@ -96,16 +97,22 @@ const statusError = ref('');
 const nowSec = ref(Math.floor(Date.now() / 1000));
 let statusTimer = null;
 
+// 2s 定时轮询与写操作后的手动刷新会并发；用单调递增序号丢弃过期响应，
+// 避免「先发的慢请求后返回」把新状态覆盖掉。
+let statusSeq = 0;
 async function refreshStatus() {
+  const seq = ++statusSeq;
   nowSec.value = Math.floor(Date.now() / 1000);
   connection.host = location.host || '(未知)';
   try {
     const data = await api.getStatus();
+    if (seq !== statusSeq) return;
     status.value = data;
     statusError.value = '';
     connection.ok = true;
     connection.detail = '本机服务已连通 · 端口 ' + data.service.port;
   } catch (e) {
+    if (seq !== statusSeq) return;
     status.value = null;
     statusError.value = e.message || '无法连接';
     connection.ok = false;
@@ -149,15 +156,17 @@ function eventText(m) {
 function clockText() {
   return new Date().toLocaleTimeString('zh-CN', { hour12: false });
 }
-async function eventLoop() {
+let eventGeneration = 0;
+async function eventLoop(generation) {
   const client = 'studio-' + Math.random().toString(36).slice(2, 10);
-  while (eventRunning) {
+  while (eventRunning && generation === eventGeneration) {
     try {
       const q = '/__scene-events?client=' + encodeURIComponent(client) +
         (eventCursor === null ? '' : '&after=' + eventCursor);
       const res = await fetch(q, { signal: eventAbort.signal });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
+      if (!eventRunning || generation !== eventGeneration) break;
       eventCursor = data.cursor;
       const list = data.messages || [];
       for (let i = list.length - 1; i >= 0; i--) {
@@ -165,18 +174,22 @@ async function eventLoop() {
       }
       if (events.value.length > 40) events.value.length = 40;
     } catch (e) {
-      if (!eventRunning) break;
+      if (!eventRunning || generation !== eventGeneration) break;
       await new Promise((r) => setTimeout(r, 1500));
     }
   }
 }
 function startEventLoop() {
+  if (eventRunning) return;  // 防重复挂载时启动多个共享同一 AbortController 的循环
   eventAbort = new AbortController();
   eventRunning = true;
-  eventLoop();
+  eventGeneration += 1;
+  eventCursor = null;
+  eventLoop(eventGeneration);
 }
 function stopEventLoop() {
   eventRunning = false;
+  eventGeneration += 1;
   if (eventAbort) eventAbort.abort();
 }
 
@@ -486,17 +499,20 @@ const schedParams = computed(() => ({
 const schedUrl = computed(() => location.origin + '/__api' + api.scheduleQuery(schedParams.value));
 const schedAppearances = computed(() => (schedResult.value && schedResult.value.appearances) || []);
 
+let schedSeq = 0;
 async function previewSchedule() {
   if (!schedPacks.value.length) { flash('请至少选择一个内容包', true); return; }
   stopRehearsal();
+  const seq = ++schedSeq;
   schedLoading.value = true;
   try {
     const data = await api.previewSchedule(schedParams.value);
+    if (seq !== schedSeq) return;  // 连点两次时只接受最后一次
     schedResult.value = data;
     tlSelected.value = data.appearances && data.appearances.length ? 0 : -1;
     flash('已生成出场序列，共 ' + (data.appearances || []).length + ' 个');
-  } catch (e) { flash('预览失败：' + e.message, true); }
-  finally { schedLoading.value = false; }
+  } catch (e) { if (seq === schedSeq) flash('预览失败：' + e.message, true); }
+  finally { if (seq === schedSeq) schedLoading.value = false; }
 }
 function stopRehearsal() {
   tlPlaying.value = false;
@@ -678,6 +694,30 @@ function ruleLabel(k) {
   })[k] || k;
 }
 
+// —— 数据层状态（SQLite）：控制台只读展示，展示端不关心 ——
+const dbInfo = ref(null);
+const dbError = ref('');
+const DB_TABLE_LABELS = {
+  packs: '内容包', characters: '人物', media: '图片元数据',
+  settings: '设置文档', audit: '操作日志', runtime_state: '运行时状态',
+};
+async function loadDbInfo() {
+  try {
+    const data = await api.getDbInfo();
+    dbInfo.value = data.db || null;
+    dbError.value = '';
+  } catch (e) {
+    dbInfo.value = null;
+    dbError.value = e.message;
+  }
+}
+function dbTableRows(info) {
+  if (!info) return [];
+  return Object.entries(info.tables || {}).map(([key, count]) => ({
+    key, count, label: DB_TABLE_LABELS[key] || key,
+  }));
+}
+
 // —— P1：本机操作日志视图（读取服务端埋点，前端不上报）——
 const auditEntries = ref([]);
 const auditStats = ref({ total: 0, ok: 0, failed: 0, actions: [], limit: 500, lastAt: null });
@@ -686,20 +726,23 @@ const auditQuery = ref('');
 const auditOnlyFailed = ref(false);
 const auditLoading = ref(false);
 
+let auditSeq = 0;
 async function loadAudit() {
+  const seq = ++auditSeq;
   auditLoading.value = true;
   try {
+    // 筛选交给后端 SQL：早期「先取 100 条再前端过滤」会把窗口外的失败记录截掉。
     const data = await api.getAudit({
       limit: 100,
-      action: auditOnlyFailed.value ? '' : auditAction.value,
+      action: auditAction.value,
       q: auditQuery.value,
+      onlyFailed: auditOnlyFailed.value,
     });
-    let entries = data.entries || [];
-    if (auditOnlyFailed.value) entries = entries.filter((e) => !e.ok);
-    auditEntries.value = entries;
+    if (seq !== auditSeq) return;
+    auditEntries.value = data.entries || [];
     auditStats.value = data.stats || auditStats.value;
-  } catch (e) { error.value = '读取操作日志失败：' + e.message; }
-  finally { auditLoading.value = false; }
+  } catch (e) { if (seq === auditSeq) error.value = '读取操作日志失败：' + e.message; }
+  finally { if (seq === auditSeq) auditLoading.value = false; }
 }
 async function clearAudit() {
   try {
@@ -719,11 +762,13 @@ function onKeydown(e) {
 watch(activeView, (v) => {
   if (v === 'audit') loadAudit();
   if (v === 'packs') loadPacks();
+  if (v === 'system') loadDbInfo();
 });
 watch([auditAction, auditOnlyFailed], () => loadAudit());
 
 onMounted(async () => {
-  await Promise.all([loadMeta(), loadPacks(), loadMedia(), loadSettings(), refreshStatus()]);
+  await Promise.all([loadMeta(), loadPacks(), loadMedia(), loadSettings(),
+                     refreshStatus(), loadDbInfo()]);
   await bcLoad();
   loadAudit();
   window.addEventListener('keydown', onKeydown);
@@ -732,6 +777,7 @@ onMounted(async () => {
 });
 onUnmounted(() => {
   if (statusTimer) clearInterval(statusTimer);
+  if (flashTimer) clearTimeout(flashTimer);
   stopEventLoop();
   stopRehearsal();
   window.removeEventListener('keydown', onKeydown);
@@ -1138,7 +1184,9 @@ onUnmounted(() => {
               <button class="btn ghost small" @click="previewEnabled = !previewEnabled">{{ previewEnabled ? '暂停' : '恢复' }}</button>
             </div>
             <div v-if="previewEnabled" class="preview-box" :style="previewBoxStyle">
-              <iframe :key="previewUrl" :src="previewUrl" :style="previewFrameStyle" title="展示端实时预览"></iframe>
+              <iframe :key="previewUrl" :src="previewUrl" :style="previewFrameStyle"
+                      sandbox="allow-scripts allow-same-origin allow-popups"
+                      referrerpolicy="no-referrer" title="展示端实时预览"></iframe>
             </div>
             <div v-else class="empty">预览已暂停，不会加载展示页（省渲染资源）。</div>
             <p class="muted">iframe 里是真实展示页，它自己 GET 已保存的设置。未保存的修改请先点「保存设置」，保存后这里会自动刷新；控制台不会向 iframe 注入草稿配置。</p>
@@ -1168,6 +1216,25 @@ onUnmounted(() => {
               <div class="chain-row"><span class="chain-key">角色字段 / 包字段</span><span class="mono muted">{{ schema ? schema.characterFields.length : 0 }} / {{ schema ? schema.packFields.length : 0 }}</span></div>
               <div class="chain-row"><span class="chain-key">工作台主题</span><span class="muted">仅影响控制台自身，与展示端主题无关</span><button class="btn small" @click="theme = theme === 'dark' ? 'light' : 'dark'">切换</button></div>
             </div>
+          </section>
+          <section class="card">
+            <div class="card-head"><h2>数据层（SQLite）</h2>
+              <button class="btn ghost small" @click="loadDbInfo">刷新</button></div>
+            <div v-if="dbError" class="empty">数据层状态读取失败：{{ dbError }}</div>
+            <template v-else-if="dbInfo">
+              <div class="chain">
+                <div class="chain-row"><span class="chain-key">运行时数据源</span><span class="tag ok">{{ dbInfo.backend }} · schema v{{ dbInfo.schemaVersion }}</span><span class="mono muted">{{ dbInfo.dbPath }}</span></div>
+                <div class="chain-row"><span class="chain-key">完整性</span><span :class="dbInfo.integrity === 'ok' ? 'tag ok' : 'tag bad'">{{ dbInfo.integrity }}</span><span class="muted">{{ dbInfo.sizeBytes }} 字节</span></div>
+                <div class="chain-row" v-if="dbInfo.migratedFrom"><span class="chain-key">首次迁移</span><span class="muted">已从 JSON 导入 {{ dbInfo.migratedFrom.packs }} 包 / {{ dbInfo.migratedFrom.media }} 图片 / {{ dbInfo.migratedFrom.audit }} 条日志</span><span class="mono muted">{{ dbInfo.migratedAt }}</span></div>
+              </div>
+              <div class="audit-metrics">
+                <div class="metric" v-for="r in dbTableRows(dbInfo)" :key="r.key">
+                  <div class="metric-label">{{ r.label }}</div><div class="metric-value mono">{{ r.count }}</div>
+                </div>
+              </div>
+              <p class="muted">SQLite 是运行时唯一数据源；<code>data/packs/*.json</code>、<code>settings.json</code>、<code>media/index.json</code> 是同步落盘的分发 / 备份镜像。手改 JSON 后用 <code>python -m printcast --db import</code> 导入，改库后用 <code>--db export</code> 导出，<code>--db verify</code> 自检。</p>
+            </template>
+            <div v-else class="empty">正在读取数据层状态…</div>
           </section>
         </template>
 

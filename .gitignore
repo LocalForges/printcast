@@ -14,6 +14,11 @@ avatar-cache.json
 ws-samples/
 # 控制台设置与本机操作日志由后端在运行期落盘，属于本机用户数据
 data/settings.json
+# SQLite 是运行时唯一数据源；data/packs/*.json 与 data/media/index.json 保留为
+# 入库的分发 / 备份格式，改动后可用 --db-export 重新导出。
+data/printcast.db
+data/printcast.db-wal
+data/printcast.db-shm
 data/audit.jsonl
 data/audit.jsonl.tmp-*
 data/*.tmp-*

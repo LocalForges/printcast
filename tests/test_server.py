@@ -161,7 +161,9 @@ class ServerTests(unittest.TestCase):
         with self.get('/__health', same_origin=False) as response:
             data = json.load(response)
         self.assertEqual(data['service'], 'printcast')
-        self.assertTrue(Path(data['root']).is_dir())
+        self.assertTrue(data['ok'])
+        # 探针不应回显本机绝对路径（信息泄露）。
+        self.assertNotIn('root', data)
 
     def test_scene_events_empty_cursor(self):
         with self.get('/__scene-events?client=tester') as response:

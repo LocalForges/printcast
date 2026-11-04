@@ -132,9 +132,10 @@ def _pack(pack_id, title, mode, loop, desc, rows) -> dict:
 
 
 def seed_builtin_packs(overwrite: bool = False) -> dict:
-    """把内置内容包写入 data/packs/，返回 {written, skipped, errors}。
+    """把内置原始示例包写入 SQLite，并同步落盘 data/packs/*.json 镜像。
 
-    overwrite=False 时跳过已存在同 id 的包，避免覆盖用户自有数据。
+    返回 {written, skipped, errors}。存在性判断以库为准（不再是「看 JSON 文件
+    在不在」）；overwrite=False 时跳过已存在同 id 的包，避免覆盖用户自有数据。
     """
     written, skipped, errors = [], [], []
     for pack in builtin_packs():

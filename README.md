@@ -52,8 +52,11 @@ python -m printcast --server-only    # 或简写：printcast --server-only
 | `printcast --server-only` | 仅 HTTP 服务 + 自动开浏览器，用于纯前台调试 |
 | `printcast --port 8090` | 指定 HTTP 端口（默认 8080，被占时自动顺延） |
 | `printcast --room 123456 --capture` | 启动后直接打开直播间并开始抓取 |
-| `printcast --seed [--overwrite]` | 把内置示例内容包（明朝十六帝 + 三国/水浒/红楼/西游）写入 `data/packs` 后退出；加 `--overwrite` 可覆盖已存在的同名包重新播种 |
+| `printcast --seed [--overwrite]` | 把内置示例内容包（明朝十六帝 + 三国/水浒/红楼/西游）写入 SQLite（`data/printcast.db`）并同步导出 `data/packs/*.json` 后退出；加 `--overwrite` 可覆盖已存在的同名包重新播种 |
 | `printcast --schedule [PACK...]` | 预览指定内容包的出场顺序后退出（不跟包名则列出全部可用包）；可配合 `--mode`/`--strategy`/`--count` |
+| `printcast --db info` | 打印数据库后端、各表行数、完整性校验（PRAGMA integrity_check）与当前镜像状态，不改动数据 |
+| `printcast --db export` | 把库内容导出成与旧版同构的 JSON（`data/packs/*.json` + `data/media/index.json` + `data/settings.json`），便于 git 比对 / 备份 / 分发 |
+| `printcast --db verify` | 校验库完整性（设置存在、每个内容包的字符数 > 0、媒体索引自洽），全部通过才返回 ok |
 
 环境变量（不引入 dotenv 依赖，直接 `export` 即可）：
 
@@ -142,7 +145,8 @@ printcast/
 | `rules/` | 8 个打印开关、演示队列、30 秒空闲补位 | 无 |
 | `audio/` | 程序化音效 + 中英双语 TTS 文案 | → `assets/` |
 | `src/printcast/` | Python 侧：静态服务、桌面窗口、本机控制端点、WebRTC 信令中继 | 核心零依赖，仅 `desktop.py` 需 pywebview |
-| `src/printcast/{schema,storage,importer,templates,api}.py` | **数据层**：领域模型（单一事实来源）、JSON 原子写、CSV/JSON 导入校验、模板生成、REST 分发 | → `config` |
+| `src/printcast/{db}.py` | **SQLite 数据层**（标准库 `sqlite3`，WAL，短连接 + 表级锁）：packs / characters / media / settings / audit / runtime_state / meta 七张表；首次启动幂等从 JSON 迁移，对外隐藏「库 vs JSON」差异 | → `config` |
+| `src/printcast/{schema,storage,importer,templates,api}.py` | **数据访问层**：领域模型（单一事实来源）、库读写封装、CSV/JSON 导入校验、模板生成、REST 分发；`storage.save_pack / delete_pack / list_packs` 等签名保持不变，内部已走 `db` | → `db` / `config` |
 | `src/printcast/{scheduler,samples,broadcast}.py` | **出场调度层**：顺序引擎（三模式 + 多包组合、seed 可复现）、内置示例包、经 SceneRelay 实时广播 | → `schema`/`relay` |
 | `desktop/`（旧） | 两个薄转发模块，仅为兼容旧 bat / guide / 外部引用 | → `printcast` |
 
@@ -166,10 +170,22 @@ printcast/
   | `broadcast.speech` / `scriptedPrint` | M1 出场打印的门控 |
   | `live.defaultRoom` / `platform` | 展示端回填房间号输入框与占位文案 |
 - **鉴权**：所有 `/__api/*` 与 `/__` 本机端点要求 Host 为 `127.0.0.1` / `localhost` / `::1` 加当前端口，且 `Sec-Fetch-Site` 若存在只能是 `same-origin` / `none`（缺失时放行，Safari 不发该头），防止外部站点借本地服务读写数据或拉起进程；`/__health` 除外（仅供存活探测）。
-- **操作日志由服务端统一埋点**（P1）：`src/printcast/audit.py` 记录所有本机写操作（设置、内容包、图片、广播、数据桥、窗口控制），失败动作同样留痕；前端只读取 `GET /__api/audit`，**不靠浏览器上报**。展示端高频信令不记录。日志落在本机 `data/audit.jsonl`（JSON Lines，500 条上限、字段截断、不记请求体），清空时保留一条 `audit.clear` 记录以维持可回溯性。
+- **操作日志由服务端统一埋点**（P1）：`src/printcast/audit.py` 基于 SQLite `audit` 表记录所有本机写操作（设置、内容包、图片、广播、数据桥、窗口控制），失败动作同样留痕；前端只读取 `GET /__api/audit`，**不靠浏览器上报**。展示端高频信令不记录。`audit` 表 500 条上限、字段截断、不记请求体，清空（DELETE）时保留一条 `audit.clear` 记录以维持可回溯性；原先的 `data/audit.jsonl` 已不再使用（见「SQLite 数据落库」）。
 - **设置页 iframe 预览不破坏边界**（P1）：预览加载的是真实展示页（自己 `GET /__api/settings`），控制台**不向 iframe 注入草稿配置**；只有已保存的设置会呈现，保存成功后自动刷新 iframe。可切换目标页与缩放比例，也可暂停预览省渲染资源。
 - **静态页面全面参数化**：原先内嵌在 HTML 里的品牌名、广告条、联系方式、强调色已全部移除；`site/` 宣传页亦清除第三方署名与水印，仅保留 printcast 自有品牌。旧版硬编码广告条由控制台的 `display.showAnnounce` + `announceText` + `branding.links` 取代（默认关闭，无任何硬编码内容）。
 - **回归护栏**：`tests/settings-loader.test.mjs` 用最小 DOM 桩在 Node 里跑真实装载器，锁死「只 GET / 取 settings 本体 / 展示端不写配置」；`tests/test_settings.py` 覆盖布尔与数值收口、危险协议拒绝、未知分区剔除与 autoStart。
+
+### SQLite 数据落库（数据层改造）
+
+原先数据层是 **JSON 文件 + 原子写**（内容包 `data/packs/*.json`、设置 `data/settings.json`、日志 `data/audit.jsonl`），广播进度与场景事件则是**纯内存**——多线程并发下读改写会丢更新、重启即丢状态。本次改造把全部状态收口到**单文件 SQLite**（`data/printcast.db`，标准库 `sqlite3`，WAL 模式，零第三方依赖）：
+
+- **七张表**：`packs`（内容包本体）、`characters`（人物，外键关联 packs，承载 tags/weight/order/speech/avatar）、`media`（图片索引）、`settings`（单行 JSON）、`audit`（操作日志）、`runtime_state`（广播进度 / 当前角色 / seed / startedAt，`startedAt` 缺省为进程启动时间）、`meta`（schema 版本 + 迁移标记）。
+- **首次启动幂等迁移**：`db.ensure_db()` 在建库后，若检测到旧版 JSON 文件且 `meta` 未标记迁移，会把它们整库导入并打标；之后**单一事实来源是数据库**，JSON 仅作为可比对 / 备份 / 分发格式，由 `export_json()` 在每次写后尽力镜像（`data/printcast.db*`、`data/settings.json`、`data/audit.jsonl` 均已被 `.gitignore` 排除，不入库）。
+- **并发安全**：关键写用 `BEGIN IMMEDIATE` + 表级 `threading.Lock`，读改写不再丢更新；`audit` 的「清空留痕」在单事务内 `DELETE` 再 `INSERT`，原子完成。
+- **广播进度持久化**：`broadcast.next/trigger/reset` 实时写 `runtime_state`；`BroadcastController(restore=True)` 能在服务重启后从库恢复「当前角色 / seq / seed / startedAt」并继续正确推进。
+- **对外契约不变**：`storage.*` / `settings.*` / `audit.*` 的函数签名与返回形状保持原样，所有 `/__api/*` 行为与 P1 一致；新增 `GET /__api/db` 只读暴露后端类型、各表行数与 `integrity_check`，供工作台「系统」页展示。
+
+> 设计取舍：刻意采用「SQLite 库 + JSON 镜像」双写，而非纯 JSON 或纯数据库——库解决并发与持久化，JSON 保留人类可读 / git 比对 / 跨机分发能力，且迁移对存量用户完全透明（旧 `data/` 在有库之前仍是唯一真相）。
 
 **Python 包内部的依赖方向**：`cli → desktop/server/api → probe/relay → config`。`config` 不依赖任何兄弟模块；`desktop.py` 是唯一 import `webview` 的文件，所以 `--server-only` 不装桌面依赖也能启动；`api.py` 是纯函数分发层，`tests/test_api.py` 可直接调 `api.dispatch()` 而不起 HTTP 服务。
 
@@ -329,16 +345,18 @@ bash scripts/build-studio.sh
 
 ```bash
 pip install -e ".[test]"                  # 安装 pytest（可选）
-python -m pytest                          # 81 个用例（76 主用例 + 5 子测试）：数据层 / 信令 / 出场调度 / 广播 / HTTP 端点 / 兼容转发
-cd tests && node --test *.test.mjs        # 57 个 node:test 用例（含前端结构防回退）
+python -m pytest                          # 127 个用例：数据层 / 信令 / 出场调度 / 广播 / HTTP 端点 / 兼容转发 / SQLite 落库 / 操作日志
+cd tests && node --test *.test.mjs        # 75 个 node:test 用例（含前端结构防回退 / 工作台 API 契约）
 ```
 
 覆盖分层：
 
 | 测试 | 验证内容 |
 |---|---|
-| `test_api.py` | 数据层全链路：schema 驱动、内容包 CRUD、模板生成、CSV/JSON 导入逐行校验、图片上传（魔数校验 + 中文名保留）、路径穿越防护 |
-| `test_server.py` | 静态资源、no-store 头、文档根、`/__` 端点鉴权、存活探针、端口复用、信令 publish→poll、非法路径拦截、**API 经 GET 路由到 api 层** |
+| `test_api.py` | 数据层全链路：schema 驱动、内容包 CRUD、模板生成、CSV/JSON 导入逐行校验、图片上传（魔数校验 + 中文名保留）、路径穿越防护、**`/__api/db` 只读状态端点** |
+| `test_server.py` | 静态资源、no-store 头、文档根、`/__` 端点鉴权、存活探针、端口复用、信令 publish→poll、非法路径拦截、**API 经 GET 路由到 api 层**、广播状态重启恢复、畸形广播体 400 不误推进、DELETE `/settings/anything` 不再清空配置 |
+| `test_db.py` | **SQLite 落库**：建库幂等迁移、WAL、并发写不丢更新、JSON 镜像导出/导入往返、删除后恢复性重建、verify 完整性、广播进度持久化与恢复 |
+| `test_audit.py` | P1 操作日志（已迁 SQLite `audit` 表）：持久化 / 倒序与筛选 / 字段截断 / 清空保留 `audit.clear` / API 路由；schedule 的 seed 回显、可复现与 count 上限 |
 | `test_compat.py` | 旧 `desktop_launcher` / `scene_relay` 薄转发仍指向同一实现 |
 | `test_scene_relay.py` | 有界信令：隔离客户端、不重放旧 offer |
 | `test_scheduler.py` | 出场调度引擎：三模式（sequence/weighted/trigger）、多包组合（concat/interleave/merged）、seed 可复现、进度/历史/循环 |
@@ -353,6 +371,8 @@ cd tests && node --test *.test.mjs        # 57 个 node:test 用例（含前端�
 
 大体积二进制（音频 wav / 背景贴图 png / 文档截图，约 33MB）未随 git 提交，执行一次 `bash scripts/vendor-assets.sh` 即可从上游按原相对路径还原，之后完全离线可运行。`assets/three.module.js`（1.3MB）是渲染层唯一硬依赖，已直接入库，无需联网。
 
+**素材缺失降级（M2）**：若未执行 `vendor-assets.sh`，`web/app.zh.mjs` 与 `web/app.en.mjs` 在贴图 / 音频 / 头像加载失败时**不再 404 黑屏或弹出「请重启服务」**，而是降级为纯色材质 + 静音，并在左下角显示一条 `role="status"` 提示（列出缺失类别 + 还原命令）；OBS 采集的独立场景窗口（`?scene=1`）保持画面干净。规则演示台三个图标破图时自动隐藏而非留占位符。
+
 ## 贡献与提交
 
 ```bash
@@ -361,11 +381,13 @@ cd printcast
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[test,desktop]"
 bash scripts/vendor-assets.sh       # 还原二进制资源
-python -m pytest                    # 81/81 应当全绿（76 主用例 + 5 子测试）
-cd tests && node --test *.test.mjs  # 57/57 应当全绿
+python -m pytest                    # 127 项全绿（含 test_db / test_audit / test_server 子测试）
+cd tests && node --test *.test.mjs  # 75/75 应当全绿（含 studio-api / settings-loader / gift-preemption）
 ```
 
 改了 Python 侧请跑 `python -m pytest`；改了采集层请务必跑 `tests/bridge.test.mjs`（覆盖 protobuf 信封识别、头像归属、点赞限流）；**改页面逻辑请改 `web/app.zh.mjs` 与 `web/app.en.mjs`，不要往 HTML 里塞内联脚本**（`html-structure.test.mjs` 会拦下）；改完起本地 HTTP 服务用浏览器打开 `/web/index.html` 看控制台。新增 Python 模块放 `src/printcast/`，不要写回 `src/desktop/`。
+
+CI：`.github/workflows/ci.yml` 在每次 push / PR 时跑 `pytest`（Ubuntu，Python 3.11）、`node --test`（Node ≥ 18）与 `bash scripts/build-studio.sh` 构建校验，三者任一失败即阻断合并。本地未构建就提交的 `web/studio-dist/` 产物差异会被 CI 抓到。
 
 ## 路线图
 

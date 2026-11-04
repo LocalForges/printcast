@@ -37,11 +37,34 @@ class SceneRelay:
             self.condition.notify_all()
 
     def poll(self, client, after=None, timeout=15):
+        """长轮询取增量事件。
+
+        - after=None 是「握手」语义：立刻返回当前游标，不回放历史；
+        - after 统一收口成 int 并钳制到 [0, sequence]，避免字符串比较 TypeError
+          或负数游标把整段历史重放给客户端；
+        - deque 有界，客户端落后超过 256 条时事件会被挤出。返回 gap / dropped /
+          earliest 让订阅方知道自己漏了消息，可主动拉 /__api/broadcast 补位，
+          而不是「静默丢事件且游标照常前进」。
+        """
         with self.condition:
             if after is None:
-                return {'cursor': self.sequence, 'messages': []}
+                return {'cursor': self.sequence, 'messages': [],
+                        'gap': False, 'dropped': 0,
+                        'earliest': self.events[0][0] if self.events else self.sequence + 1}
+            try:
+                after = int(after)
+            except (TypeError, ValueError):
+                raise ValueError('bad cursor')
+            after = max(0, min(after, self.sequence))
             deadline = time.monotonic() + timeout
             while self.sequence <= after and time.monotonic() < deadline:
                 self.condition.wait(max(0, deadline - time.monotonic()))
-            return {'cursor': self.sequence,
-                    'messages': [m for n, c, m in self.events if n > after and c != client]}
+            earliest = self.events[0][0] if self.events else self.sequence + 1
+            dropped = max(0, earliest - 1 - after)
+            return {
+                'cursor': self.sequence,
+                'messages': [m for n, c, m in self.events if n > after and c != client],
+                'gap': dropped > 0,
+                'dropped': dropped,
+                'earliest': earliest,
+            }

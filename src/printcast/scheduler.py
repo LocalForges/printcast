@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import random
+import re
 from dataclasses import dataclass, field
 from typing import Iterable, List, Optional, Tuple
 
@@ -25,6 +26,31 @@ from . import schema
 
 # (角色, 所属包 id, 所属包标题) 的内部三元组
 _Item = Tuple[dict, str, str]
+
+
+def normalize_seed(raw):
+    """把 seed 统一成一种类型，再交给 random.Random。
+
+    历史坑：URL query 里的纯数字被 int() 化，而 JSON body 里的字符串原样进入
+    random.Random —— 两者是**不同序列**，导致「预演的序列 ≠ 按此配置开播」。
+    现在所有入口（/schedule、/broadcast、autoStart）都先过这里，前端也不再自行
+    把大整数转 Number（JS 双精度会丢 >2^53 的精度），直接传字符串即可。
+    """
+    if raw is None or isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, float):
+        return int(raw) if raw.is_integer() else str(raw)
+    text = str(raw).strip()
+    if not text:
+        return None
+    if re.fullmatch(r'[+-]?\d+', text):
+        try:
+            return int(text)
+        except ValueError:
+            return text
+    return text
 
 
 @dataclass
@@ -68,8 +94,8 @@ class ContentScheduler:
         if strategy not in self.STRATEGIES:
             raise ValueError('未知的组合策略：%s' % strategy)
         self.strategy = strategy
-        self._seed = seed
-        self.rng = random.Random(seed)
+        self._seed = normalize_seed(seed)
+        self.rng = random.Random(self._seed)
         self.packs = self._validated()
         # 多包场景以首个包的 mode 为主调度模式；叙事类组合默认都应是 sequence。
         self.mode = (self.packs[0].get('mode') or 'sequence')
@@ -128,8 +154,52 @@ class ContentScheduler:
         self._loop_count = 0
         self._last_weighted = None
         self._history: List[Appearance] = []
+        self._history_count = 0
+        # 重新播种 rng：否则「重置进度」后 weighted 仍从上次随机状态续跑，
+        # 与固定 seed 承诺的「从头可复现」不符。
+        self.rng.seed(self._seed)
         # trigger 队列在 reset 时回到完整顺序
         self._pending = list(self._ordered)
+        return self
+
+    # —— 进度持久化（供广播状态跨重启恢复）——
+
+    def snapshot_state(self) -> dict:
+        """导出可 JSON 序列化的游标 / 随机状态快照，不含完整出场历史。"""
+        version, state, gauss = self.rng.getstate()
+        return {
+            'position': self._pos,
+            'appeared': self._history_count,
+            'cycle': self._loop_count,
+            'rngVersion': version,
+            'rngState': list(state),
+            'rngGauss': gauss,
+            'lastWeightedId': (self._last_weighted or {}).get('id')
+            if isinstance(self._last_weighted, dict) else None,
+            'pendingIds': [c.get('id') for c, _, _ in self._pending],
+        }
+
+    def restore_state(self, snap: dict):
+        """从快照恢复游标与随机序列；出场历史本身不跨重启，但计数保留。"""
+        if not isinstance(snap, dict):
+            return self
+        self._pos = max(0, int(snap.get('position') or 0))
+        self._loop_count = max(0, int(snap.get('cycle') or 0))
+        self._history_count = max(0, int(snap.get('appeared') or 0))
+        self._history = []
+        try:
+            self.rng.setstate((int(snap['rngVersion']),
+                               tuple(int(x) for x in snap['rngState']),
+                               snap.get('rngGauss')))
+        except (KeyError, TypeError, ValueError):
+            self.rng.seed(self._seed)
+        by_id = {c.get('id'): (c, pid, pt) for c, pid, pt in self._ordered}
+        last = snap.get('lastWeightedId')
+        self._last_weighted = by_id[last][0] if last in by_id else None
+        if 'pendingIds' in snap:
+            self._pending = [by_id[i] for i in snap['pendingIds'] if i in by_id]
+        else:
+            self._pending = list(self._ordered)
         return self
 
     def next(self) -> Optional[Appearance]:
@@ -189,8 +259,9 @@ class ContentScheduler:
 
     def _emit(self, c, pid, pt, loop=0) -> Appearance:
         ap = Appearance(character=c, pack_id=pid, pack_title=pt,
-                        index=len(self._history), mode=self.mode, loop=loop)
+                        index=self._history_count, mode=self.mode, loop=loop)
         self._history.append(ap)
+        self._history_count += 1
         return ap
 
     def peek(self) -> Optional[dict]:
@@ -204,10 +275,13 @@ class ContentScheduler:
     def plan(self, count: Optional[int] = None) -> List[dict]:
         """生成出场序列的预览（**不改动**实时游标 / 历史），供 API 与 UI 调用。
 
-        - sequence 非 loop：从当前位置到末尾（可被 count 截断）；
-        - sequence + loop：循环 count 次（count 缺省为一轮长度）；
-        - weighted：按 seed 复现地抽样 count 次（count 缺省 20 或候选数）；
+        - sequence 非 loop：从**当前位置**到末尾（可被 count 截断）；
+        - sequence + loop：从当前位置起循环 count 次（count 缺省为一轮长度）；
+        - weighted：从**当前随机状态**复现地抽样 count 次（不改动实时 rng）；
         - trigger ：返回当前待出场队列。
+
+        新建的调度器游标为 0、rng 处于 seed 初态，所以 /schedule 的「固定 seed
+        复现」语义不变；广播中途调 plan() 则能看到真正接下来会出场的角色。
         """
         if self.mode == 'weighted':
             return self._plan_weighted(count)
@@ -226,16 +300,21 @@ class ContentScheduler:
         if not self._ordered:
             return []
         out, n = [], max(1, count)
+        total = len(self._ordered)
         for k in range(n):
-            c, pid, pt = self._ordered[k % len(self._ordered)]
-            out.append(self._preview_dict(c, pid, pt, loop=k // len(self._ordered)))
+            step = self._pos + k
+            c, pid, pt = self._ordered[step % total]
+            out.append(self._preview_dict(c, pid, pt,
+                                          loop=self._loop_count + step // total))
         return out
 
     def _plan_weighted(self, count: Optional[int]) -> List[dict]:
         if not self._roster:
             return []
         n = count or min(20, len(self._roster))
-        r = random.Random(self._seed)
+        # 用当前 rng 的副本推演，既不改动实时状态，也不会错误地「从头重播」。
+        r = random.Random()
+        r.setstate(self.rng.getstate())
         last = None
         out: List[dict] = []
         for _ in range(n):
@@ -272,7 +351,7 @@ class ContentScheduler:
             'position': self._pos,
             'total': total,
             'remaining': max(0, total - self._pos) if self.mode == 'sequence' and not self.loop else None,
-            'appeared': len(self._history),
+            'appeared': self._history_count,
             'cycle': self._loop_count,
         }
 

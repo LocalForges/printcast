@@ -96,6 +96,15 @@ def studio_dist_dir():
     return ROOT / 'web' / 'studio-dist'
 
 
+# SQLite 单文件数据库：运行时唯一数据源。JSON 文件降级为导入/导出与备份格式。
+DB_FILENAME = 'printcast.db'
+
+
+def db_path():
+    """动态计算（测试 monkeypatch DATA_DIR 后立即生效），与 db.db_path 保持同源。"""
+    return DATA_DIR / DB_FILENAME
+
+
 MAX_JSON_BYTES = int(os.environ.get('PRINTCAST_MAX_JSON_BYTES', str(2 * 1024 * 1024)))
 MAX_MEDIA_BYTES = int(os.environ.get('PRINTCAST_MAX_MEDIA_BYTES', str(10 * 1024 * 1024)))
 ALLOWED_IMAGE_EXT = {'.png', '.jpg', '.jpeg', '.webp'}

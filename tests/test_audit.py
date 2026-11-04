@@ -58,11 +58,14 @@ def test_filter_by_action_and_keyword(tmp_path, monkeypatch):
     assert len(audit.list_entries(limit=9999)) == 3  # clamp 到上限内仍返回全部
 
 
-def test_corrupt_lines_are_skipped(tmp_path, monkeypatch):
+def test_legacy_jsonl_migration_skips_corrupt_rows(tmp_path, monkeypatch):
+    """首次建库会把旧 JSONL 迁进来；损坏行 / 缺 id 行必须跳过而不是打挂库。"""
     root = _use_tmp(tmp_path, monkeypatch)
-    path = root / 'audit.jsonl'
-    path.write_text('not json\n' + json.dumps({'action': 'x', 'ok': True}) + '\n',
-                    encoding='utf-8')
+    good = {'id': 'legacy1', 'at': '2026-11-04T00:00:00+00:00',
+            'action': 'x', 'target': '', 'ok': True, 'status': 200, 'detail': ''}
+    (root / 'audit.jsonl').write_text(
+        'not json\n' + json.dumps(good) + '\n' + json.dumps({'action': 'no-id'}) + '\n',
+        encoding='utf-8')
     assert audit.stats()['total'] == 1
     assert audit.list_entries()[0]['action'] == 'x'
 

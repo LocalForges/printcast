@@ -4,6 +4,24 @@
 
 ---
 
+## 数据落库 + 缺陷修复 + M2 资产降级 + CI（2026-11-05）
+
+三项用户指令：**1. 修复已知问题；2. 数据落库；3. 原始测试数据落盘落库并跑通**。本轮在保持「控制台写 / 展示端只读」边界与零第三方依赖的前提下完成。
+
+- **SQLite 数据落库**：新增 `src/printcast/db.py`（标准库 `sqlite3`，WAL，短连接 + 表级锁）。七张表 `packs/characters/media/settings/audit/runtime_state/meta`；首次启动幂等从旧版 JSON 迁移，之后**数据库为单一事实来源**，JSON 仅作为可比对 / 备份 / 分发镜像（每次写后尽力 `export_json`）。`storage.*` / `settings.*` / `audit.*` 的对外签名与返回形状不变，`/__api/*` 行为与 P1 完全一致。
+  - **并发安全**：关键写用 `BEGIN IMMEDIATE` + 表级锁，消除读改写丢更新、非原子 trim、index 读改写 TOCTOU。
+  - **广播进度持久化**：`runtime_state` 记录当前角色 / seq / seed / startedAt；`BroadcastController(restore=True)` 重启后完整恢复并继续正确推进（先前纯内存、重启即丢）。
+  - **新增只读端点** `GET /__api/db`：暴露后端类型、各表行数、`PRAGMA integrity_check`，供工作台「系统」页展示。
+- **修复确证缺陷**（审查 30 条后落地）：`_json` 单响应与 `OSError 41`（前序已修，本轮补回归）、`/__api/broadcast` 前缀误匹配导致 plan 被当成未知路径、畸形 JSON 广播体静默落库、字符串 seed 与 URL 整型 seed 不一致、`DELETE /__api/settings/anything` 误清空配置、`--schedule` CLI 用 `ap['index']` 崩溃、场景信令 `after` 类型、状态缓存线程安全等。广播状态恢复接上 `auto_start_broadcast`。
+- **M2 资产缺失降级**：`web/app.zh.mjs` / `app.en.mjs` 在贴图 / 音频 / 头像加载失败时降级为纯色材质 + 静音，左下角显示 `role="status"` 提示（列出缺失类别 + 还原命令），不再 404 黑屏或弹出「请重启服务」；OBS 场景窗口保持干净。
+- **CLI 与可见性**：`--db info/export/verify` 三个子命令；`--seed --overwrite` 改走数据库并同步落盘 JSON。
+- **CI 骨架**：新增 `.github/workflows/ci.yml`，push / PR 时跑 pytest + `node --test` + Studio 构建校验，任一失败即阻断。
+- **原始测试数据落盘落库跑通**：内置 5 个示例包（明朝十六帝 + 三国 / 水浒 / 红楼 / 西游，共 58 位人物）连同默认设置、媒体索引写入 `data/printcast.db` 并导出 `data/packs/*.json`；隔离临时数据目录的端到端冒烟验证 11 个 URL 全 200、同 seed 两次序列一致、广播 start/next 产生 `view-appearance`、畸形体 400 不误推进、日志可按动作 / 关键词 / 失败筛选、服务重启后进度 / 当前角色 / seed / startedAt 完整恢复、服务端异常 0。
+
+回归：pytest **127 项全绿**（新增 `test_db.py`，扩充 `test_audit` / `test_server` / `test_scene_relay` 覆盖落库与重启恢复）、node **75/75**（新增 `studio-api.test.mjs` 锁死前端请求契约）、Studio 构建通过（139 KB js / 15 KB css，产物已重构建入库）；`data/printcast.db`、`data/settings.json`、`data/audit.jsonl` 已加入 `.gitignore`，不入库。
+
+---
+
 ## 工作台内容真正可管理（P1，2026-11-04）
 
 P0 把工作台变成了中控台，P1 解决的是「内容不可管理」：以前内容包只能列 ID 与删除，序列只是一串文字列表，设置改完要手动开新窗口验证。本次全部补齐，且**展示端一行未改**。
