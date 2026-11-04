@@ -28,6 +28,21 @@ async function req(method, path, { json, body, headers } = {}) {
   return data;
 }
 
+// 本机控制端点在 /__ 前缀下（不属于 /__api/），但同样走同源 fetch，
+// 因此后端 _guard() 对本机页面天然放行。
+async function localGet(path) {
+  const res = await fetch(path);
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!res.ok) {
+    const err = new Error((data && data.error) || res.statusText);
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
 export const api = {
   getSchema: () => req('GET', '/schema'),
   getTemplate: (fmt) =>
@@ -58,4 +73,14 @@ export const api = {
   // 控制台设置（唯一可写配置来源；展示端只读）：GET/PUT /__api/settings
   getSettings: () => req('GET', '/settings'),
   saveSettings: (settings) => req('PUT', '/settings', { json: settings }),
+  resetSettings: () => req('DELETE', '/settings'),
+  // 控制台总览：一次拿到本机服务 / 数据桥 / 广播 / 资产计数。
+  getStatus: () => req('GET', '/status'),
+  // 数据桥启停、拉起展示窗口：后端已实现，控制台此前从未调用。
+  startBridge: (room) => localGet('/__start-bridge' + (room ? '?room=' + encodeURIComponent(room) : '')),
+  stopBridge: () => localGet('/__stop-bridge'),
+  openScene: (path, orient = 'landscape') =>
+    localGet('/__open-scene?path=' + encodeURIComponent(path) + '&orient=' + encodeURIComponent(orient)),
+  openLive: (room, portrait = false) =>
+    localGet('/__open-live?room=' + encodeURIComponent(room) + (portrait ? '&portrait=1' : '')),
 };

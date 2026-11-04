@@ -98,6 +98,8 @@ def dispatch(method, path, query=None, headers=None, body=b''):
     if path.startswith('/__api/settings'):
         if method == 'GET':
             return _ok({'ok': True, 'settings': settings_module.load_settings()})
+        if method == 'DELETE':
+            return _ok({'ok': True, 'settings': settings_module.reset_settings()})
         if method in ('POST', 'PUT'):
             try:
                 body = _json_body(body)

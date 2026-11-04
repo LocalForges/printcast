@@ -139,6 +139,23 @@ class ServerTests(unittest.TestCase):
             data = json.load(response)
         self.assertIn('ok', data)
 
+    def test_console_status_aggregates_runtime_state(self):
+        with self.get('/__api/status') as response:
+            data = json.load(response)
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['service']['port'], self.port)
+        self.assertIsInstance(data['service']['uptimeSeconds'], int)
+        self.assertIn('ok', data['bridge'])
+        self.assertIn('active', data['broadcast'])
+        self.assertEqual(set(data['counts']), {'packs', 'media'})
+        # 打印队列长度属于展示端内存，后端不得臆造。
+        self.assertNotIn('queueLength', data)
+
+    def test_console_status_requires_local_auth(self):
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.get('/__api/status', same_origin=False)
+        self.assertEqual(ctx.exception.code, 403)
+
     def test_health_probe_is_open_and_identifies_service(self):
         # 存活探针无需 same-origin（只读、无副作用），供端口复用检测使用。
         with self.get('/__health', same_origin=False) as response:

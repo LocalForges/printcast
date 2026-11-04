@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import time
 from typing import List, Optional
 
 from . import storage
@@ -27,6 +28,7 @@ class BroadcastController:
         self.strategy = 'concat'
         self.current = None
         self.seq = 0
+        self.started_at = None
 
     # —— 生命周期 ——
 
@@ -49,6 +51,7 @@ class BroadcastController:
         self.strategy = strategy
         self.current = None
         self.seq = 0
+        self.started_at = time.time()
         self.scheduler.reset()
         return self.state()
 
@@ -93,9 +96,10 @@ class BroadcastController:
 
     def state(self) -> dict:
         if self.scheduler is None:
-            return {'active': False}
+            return {'active': False, 'startedAt': None}
         return {
             'active': True,
+            'startedAt': self.started_at,
             'packIds': self.pack_ids,
             'strategy': self.strategy,
             'mode': self.scheduler.mode,

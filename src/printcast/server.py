@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -182,6 +183,11 @@ def make_handler(active_port):
     bridge = _BridgeKeeper()
     broadcast = BroadcastController(relay)
     auto_start_broadcast(broadcast)
+    started_at = time.time()
+    # bridge_status() 会逐个端口探测（每次最多 1.5s）。控制台 2s 轮询一次，
+    # 若每次都全量扫描会堆积线程，因此给探测结果加 3s TTL 缓存。
+    bridge_cache = {'at': 0.0, 'value': {'ok': False}}
+    bridge_lock = threading.Lock()
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
@@ -351,6 +357,37 @@ def make_handler(active_port):
                 return self._json(400, {'ok': False, 'error': str(exc)})
             return self._json(200, {'ok': True, 'broadcast': result})
 
+        # —— 控制台总览：把散落在后端的运行时状态聚合成一次 GET ——
+        # 打印队列长度、帧率等属于展示端内存，后端不臆造；控制台只读真实存在的
+        # 状态，避免「展示端反向汇报」破坏 console 写 / display 读 的边界。
+        def _console_status(self):
+            if self.path.split('?', 1)[0] != '/__api/status':
+                return None
+            if not self._guard():
+                return self._deny()
+            with bridge_lock:
+                now = time.monotonic()
+                if now - bridge_cache['at'] > 3.0:
+                    try:
+                        bridge_cache['value'] = bridge_status()
+                    except Exception:
+                        bridge_cache['value'] = {'ok': False}
+                    bridge_cache['at'] = now
+                bridge_state = dict(bridge_cache['value'])
+            try:
+                counts = {'packs': len(storage.list_packs()),
+                          'media': len(storage.list_media())}
+            except OSError:
+                counts = {'packs': 0, 'media': 0}
+            return self._json(200, {
+                'ok': True,
+                'service': {'port': active_port,
+                            'uptimeSeconds': round(time.time() - started_at)},
+                'bridge': bridge_state,
+                'broadcast': broadcast.state(),
+                'counts': counts,
+            })
+
         # —— POST ——
         def do_POST(self):
             if self.path.split('?', 1)[0].startswith('/__api/broadcast'):
@@ -381,9 +418,13 @@ def make_handler(active_port):
             # 已被本程序的另一实例占用（历史上靠 HTML 里的营销字符串，永远不命中）。
             if self.path == '/__health':
                 return self._json(200, {'service': 'printcast', 'root': str(ROOT)})
-            # 出场广播（有状态，需接入 relay 闭包）优先于通用 API 分发。
+            # 出场广播与控制台总览（有状态，需接入 relay / broadcast / bridge
+            # 闭包）优先于通用 API 分发，否则会被 dispatch 当成未知路径返回 404。
             if self.path.split('?', 1)[0].startswith('/__api/broadcast'):
                 return self._broadcast_call()
+            status_response = self._console_status()
+            if status_response is not None:
+                return status_response
             # 内容包 API 的 GET 端点（schema / 模板 / 列表）走同一通道。
             if self._is_api():
                 return self._api_call()

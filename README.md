@@ -203,8 +203,11 @@ printcast/
 
 除了「实时直播驱动」，printcast 还支持**预先编排内容**——这正是「按内容包顺序播放指定人物（明朝十六帝、故事人物出场表）」的实现载体。打开 `http://127.0.0.1:8080/studio/`（服务启动后自动可用）即可使用，全程本机运行、不上传云端。
 
+工作台采用「左侧导航 + 主工作区」的**中控台**布局，默认打开 **总览**：当前正在打印的角色、本机服务 / 数据桥 / 出场广播三灯状态、内容包与已出场计数，以及订阅 `/__scene-events` 的实时事件流。高频操作（开始广播 / 下一个 / 重置进度 / 拉起打印台与直播小窗 / 启停数据桥）都在一屏内完成，不用滚动、不用刷新。工作台自身的深浅主题存于 `localStorage`，与展示端 `display.theme` 互不影响。
+
 | 功能 | 说明 |
 |---|---|
+| 总览中控台 | 2 秒轮询 `GET /__api/status` + 事件流长轮询；显示当前出场角色、链路状态、实时事件与快捷干预 |
 | 内容包管理 | 列出 / 删除内容包；一个内容包 = 一组有序人物（如 16 位皇帝），由规则层按 `mode` 调度 |
 | 模板下载 | 下载 CSV / JSON 模板，字段与系统完全一致，Excel 双击不乱码（带 BOM） |
 | 数据导入 | 粘贴或上传 CSV，逐行校验、**绝不静默丢行**；错误会标注到具体行，一次改完再提交 |
@@ -265,6 +268,8 @@ bash scripts/build-studio.sh
   | `POST /__api/broadcast` | 有状态控制：`{action: start\|next\|trigger\|reset, packs, mode, strategy, seed, charId, loop}`，把「下一个出场角色」经 `view-appearance` 广播给所有订阅 `/__scene-events` 的客户端 |
   | `GET /__api/settings` | 读取全部控制台设置（branding / display / printer / broadcast / live），展示端只读此端点 |
   | `PUT /__api/settings` | 以深合并方式写入设置并即时持久化（原子写 + 输入净化）；仅控制台（Studio）调用，展示端不写 |
+  | `DELETE /__api/settings` | 恢复出厂设置，仅控制台调用 |
+  | `GET /__api/status` | 控制台总览聚合：服务端口与运行时长、数据桥探测（3s 缓存避免轮询堆积）、广播当前状态与 `startedAt`、内容包 / 图片计数。只返回后端真实持有的状态，不臆造展示端内存里的打印队列长度 |
 
 > 扩展更多人物零代码：在 `/studio/` 导入自定义内容包，或在 `data/packs/` 直接放 JSON，调度引擎会按 `order`/`weight`/`trigger` 自动驱动。`/broadcast.html` 与渲染主页共享同一 `SceneRelay` 通道，可作为 OBS 第二屏或主控大屏。
 

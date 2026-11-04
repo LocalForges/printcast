@@ -117,6 +117,18 @@ def test_dispatch_get_and_put(monkeypatch):
     assert r.status == 400
 
 
+def test_dispatch_delete_resets_settings(monkeypatch):
+    import pathlib
+    import tempfile
+    monkeypatch.setattr(config, 'DATA_DIR', pathlib.Path(tempfile.mkdtemp()))
+    from printcast import api
+    api.dispatch('PUT', '/__api/settings', body=json.dumps(
+        {'branding': {'title': '临时命名'}}).encode('utf-8'))
+    r = api.dispatch('DELETE', '/__api/settings')
+    assert r.status == 200
+    assert json.loads(r.body)['settings']['branding']['title'] == '头像打印机'
+
+
 def test_reset(tmp_path, monkeypatch):
     _use_tmp(tmp_path, monkeypatch)
     settings_module.save_settings({'branding': {'title': '临时'}})
