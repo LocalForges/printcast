@@ -63,7 +63,9 @@ class ServerTests(unittest.TestCase):
         with self.get('/site/guide.html') as response:
             body = response.read()
         self.assertIn('使用教程'.encode('utf-8'), body)
-        self.assertIn(b'../wx-copy.js', body)
+        # 旧版第三方（志哥AI）广告条 / 微信号 / wx-copy 脚本已彻底移除。
+        self.assertNotIn('志哥AI'.encode('utf-8'), body)
+        self.assertNotIn(b'wx-copy.js', body)
         self.assertIn(b'../web/index.html', body)
 
     # —— 鉴权 ——

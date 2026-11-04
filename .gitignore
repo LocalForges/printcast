@@ -1,3 +1,6 @@
+# 本地智能体工作区数据（会话记忆/日志，切勿提交）
+.workbuddy/
+
 # 运行期产生的隐私与登录态（切勿提交）
 .bridge-profile/
 .printer-webview-profile/
@@ -9,6 +12,8 @@
 desktop-bridge.log
 avatar-cache.json
 ws-samples/
+# 控制台设置由 /__api/settings 在运行期落盘，属于本机用户配置
+data/settings.json
 .output-test/
 
 # 虚拟环境（用户本地创建，绝不入库）

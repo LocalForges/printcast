@@ -28,7 +28,7 @@ from .config import (
     HTTP_PORT, HTTP_PORT_FALLBACKS, IS_MAC, LIVE_DEBUG_PORT, PROFILE_DIRS, ROOT,
     find_browser,
 )
-from . import api, config, storage
+from . import api, config, settings as settings_module, storage
 from .broadcast import BroadcastController, BroadcastError
 from .probe import bridge_status, listening, local_get, wait_bridge
 from .relay import SceneRelay
@@ -113,11 +113,31 @@ class _BridgeKeeper:
         self.process = None
 
 
+def auto_start_broadcast(broadcast):
+    """控制台设置里 b`autoStart` 为真时，服务启动即按默认参数开播。
+
+    这属于「后端（控制台）功能」：配置由 /__api/settings 提供，展示端不参与。
+    内容包缺失或参数非法时静默跳过，绝不让设置问题拖垮 HTTP 服务启动。
+    """
+    try:
+        cfg = settings_module.load_settings().get('broadcast') or {}
+        if not cfg.get('autoStart') or not cfg.get('defaultPacks'):
+            return None
+        return broadcast.start(
+            pack_ids=cfg['defaultPacks'],
+            strategy=cfg.get('strategy') or 'concat',
+            mode=cfg.get('mode') or None,
+            loop=cfg.get('loop'))
+    except Exception:  # 设置问题绝不能拖垮 HTTP 服务启动
+        return None
+
+
 def make_handler(active_port):
     """构造 Handler 类。active_port 决定 Host 校验口径，因此需要闭包传入。"""
     relay = SceneRelay()
     bridge = _BridgeKeeper()
     broadcast = BroadcastController(relay)
+    auto_start_broadcast(broadcast)
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):

@@ -148,8 +148,99 @@ async function removeMedia(id) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadMeta(), loadPacks(), loadMedia()]);
+  // 先取控制台设置，再读广播状态：广播表单的默认值来自设置，顺序不能颠倒。
+  await Promise.all([loadMeta(), loadPacks(), loadMedia(), loadSettings()]);
+  await bcLoad();
 });
+
+// —— 控制台设置（本程序唯一可写配置来源；所有展示页只读）——
+// 边界：这里写的设置经 /__api/settings PUT 落盘；前端展示页（index.html /
+// broadcast.html / live-view.html / app.zh.mjs）只 GET，不写入任何配置。
+const settings = ref(null);
+const settingsMsg = ref('');
+
+async function loadSettings() {
+  try {
+    const data = await api.getSettings();
+    settings.value = data.settings;
+  } catch (e) {
+    error.value = '读取控制台设置失败：' + e.message;
+  }
+}
+
+async function saveSettings() {
+  if (!settings.value) return;
+  try {
+    const data = await api.saveSettings(settings.value);
+    settings.value = data.settings;
+    flash('控制台设置已保存，展示页刷新后生效');
+    await bcLoad();
+  } catch (e) {
+    flash('保存失败：' + e.message, true);
+  }
+}
+
+// —— 出场广播控制（也由控制台统一驱动）——
+const bcPacks = ref([]);
+const bcStrategy = ref('concat');
+const bcMode = ref('');
+const bcLoop = ref(false);
+const bcState = ref(null);
+const bcCharId = ref('');
+
+async function bcLoad() {
+  try {
+    const data = await api.getBroadcast();
+    bcState.value = data.broadcast || {};
+    if (bcState.value.active) {
+      bcPacks.value = bcState.value.packIds || [];
+      bcStrategy.value = bcState.value.strategy || 'concat';
+      bcMode.value = bcState.value.mode || '';
+      bcLoop.value = !!bcState.value.loop;
+    } else if (settings.value && settings.value.broadcast) {
+      // 未开播时，控制台里的默认参数就是表单初值：设置真正驱动控制台行为。
+      const d = settings.value.broadcast;
+      bcPacks.value = d.defaultPacks || [];
+      bcStrategy.value = d.strategy || 'concat';
+      bcMode.value = d.mode || '';
+      bcLoop.value = !!d.loop;
+    }
+  } catch (e) { /* 尚未开始广播属正常 */ }
+}
+
+async function bcStart() {
+  if (!bcPacks.value.length) { flash('请至少选择一个内容包', true); return; }
+  try {
+    await api.broadcast('start', {
+      packs: bcPacks.value, strategy: bcStrategy.value,
+      mode: bcMode.value || undefined, loop: bcLoop.value,
+    });
+    await bcLoad();
+    flash('出场广播已启动');
+  } catch (e) { flash('启动失败：' + e.message, true); }
+}
+
+async function bcNext() {
+  try { await api.broadcast('next'); await bcLoad(); }
+  catch (e) { flash(e.message, true); }
+}
+
+async function bcTrigger() {
+  try { await api.broadcast('trigger', { charId: bcCharId.value || undefined }); await bcLoad(); }
+  catch (e) { flash(e.message, true); }
+}
+
+async function bcReset() {
+  try { await api.broadcast('reset'); await bcLoad(); flash('广播已重置'); }
+  catch (e) { flash(e.message, true); }
+}
+
+function ruleLabel(k) {
+  return ({
+    comment: '评论打印', join: '进场打印', like: '点赞打印',
+    follow: '关注打印', gift: '礼物打印', giftVoice: '礼物语音', joinVoice: '进场语音',
+  })[k] || k;
+}
 
 async function previewSchedule() {
   if (!schedPacks.value.length) { flash('请至少选择一个内容包', true); return; }
@@ -297,6 +388,142 @@ async function previewSchedule() {
       <p v-if="schedResult" class="muted">模式 {{ schedResult.mode }} · 策略 {{ schedResult.strategy }} · loop {{ schedResult.loop }}</p>
     </section>
 
+    <section class="card" v-if="settings">
+      <h2>6 · 控制台设置 <span class="muted">（唯一可写配置来源）</span></h2>
+      <p class="muted">所有展示页（打印台 / 出场广播页 / 直播小窗）只读取这里的配置，不在前端写配置。修改后点「保存设置」，展示页刷新即生效。</p>
+
+      <h3 class="sub">品牌与展示</h3>
+      <div class="row">
+        <label>站点标题<input v-model="settings.branding.title" placeholder="头像打印机" /></label>
+        <label>副标题<input v-model="settings.branding.subtitle" placeholder="直播间弹幕驱动的 3D 打印直播台" /></label>
+        <label>强调色<input v-model="settings.branding.accent" placeholder="#4f8cff" /></label>
+      </div>
+      <label>页脚说明
+        <textarea v-model="settings.branding.footer" rows="2" placeholder="本地运行，数据不上传云端"></textarea>
+      </label>
+      <div class="row">
+        <label>覆盖层主文字<input v-model="settings.display.overlayText" placeholder="PRINTCAST 01" /></label>
+        <label>覆盖层副文字<input v-model="settings.display.overlaySub" placeholder="正在制作专属头像" /></label>
+      </div>
+      <div class="row">
+        <label>主题
+          <select v-model="settings.display.theme">
+            <option value="dark">深色</option>
+            <option value="light">浅色</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" v-model="settings.display.showDemoBadge" /> 显示「演示模式」徽标</label>
+        <label class="check"><input type="checkbox" v-model="settings.display.showAnnounce" /> 显示公告条</label>
+      </div>
+      <label>公告条文案（留空则只显示下方链接）
+        <input v-model="settings.display.announceText" placeholder="由控制台设置，展示端不含硬编码内容" />
+      </label>
+      <div class="row wrap">
+        <span class="muted">页脚链接：</span>
+        <label class="check" v-for="(lnk, i) in settings.branding.links" :key="i">
+          <input v-model="lnk.label" placeholder="名称" size="8" />
+          <input v-model="lnk.href" placeholder="/site/guide.html" size="16" />
+          <button class="secondary" @click="settings.branding.links.splice(i, 1)">移除</button>
+        </label>
+        <button class="secondary" @click="settings.branding.links.push({label:'',href:'/'})">＋ 添加链接</button>
+      </div>
+
+      <h3 class="sub">打印机规则</h3>
+      <div class="checks">
+        <label class="check" v-for="k in ['comment','join','like','follow','gift','giftVoice','joinVoice']" :key="k">
+          <input type="checkbox" v-model="settings.printer.rules[k]" /> {{ ruleLabel(k) }}
+        </label>
+      </div>
+      <div class="row">
+        <label class="check"><input type="checkbox" v-model="settings.printer.autoDemo" /> 自动演示填充</label>
+        <label class="check"><input type="checkbox" v-model="settings.printer.idleFill" /> 空闲自动测试头像</label>
+        <label>演示间隔(ms)<input type="number" v-model.number="settings.printer.demoGapMs" min="0" /></label>
+      </div>
+
+      <h3 class="sub">出场广播</h3>
+      <div class="row wrap">
+        <span class="muted">默认内容包：</span>
+        <label class="check" v-for="p in packs" :key="p.id">
+          <input type="checkbox" :value="p.id" v-model="settings.broadcast.defaultPacks" /> {{ p.title }}
+        </label>
+      </div>
+      <div class="row">
+        <label>组合策略
+          <select v-model="settings.broadcast.strategy">
+            <option value="concat">concat 顺次</option>
+            <option value="interleave">interleave 穿插</option>
+            <option value="merged">merged 合并</option>
+          </select>
+        </label>
+        <label>出场模式
+          <select v-model="settings.broadcast.mode">
+            <option value="">默认</option>
+            <option value="sequence">sequence</option>
+            <option value="weighted">weighted</option>
+            <option value="trigger">trigger</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" v-model="settings.broadcast.loop" /> 循环</label>
+        <label class="check"><input type="checkbox" v-model="settings.broadcast.autoStart" /> 启动即广播</label>
+        <label class="check"><input type="checkbox" v-model="settings.broadcast.speech" /> 语音播报</label>
+        <label class="check"><input type="checkbox" v-model="settings.broadcast.scriptedPrint" /> 打到 3D 打印机（讲到谁打谁）</label>
+      </div>
+
+      <h3 class="sub">直播</h3>
+      <div class="row">
+        <label>默认直播间号<input v-model="settings.live.defaultRoom" placeholder="留空则手动输入" /></label>
+        <label>平台
+          <select v-model="settings.live.platform">
+            <option value="douyin">抖音</option>
+            <option value="other">其它</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="row">
+        <button @click="saveSettings">保存设置</button>
+        <span class="muted">{{ settingsMsg }}</span>
+      </div>
+    </section>
+
+    <section class="card" v-if="settings">
+      <h2>7 · 出场广播控制</h2>
+      <p class="muted">在此统一启动「讲到谁就打谁」的剧本播放；展示端的广播页与 3D 打印台实时同步。</p>
+      <div class="row wrap">
+        <span class="muted">内容包：</span>
+        <label class="check" v-for="p in packs" :key="p.id">
+          <input type="checkbox" :value="p.id" v-model="bcPacks" /> {{ p.title }}
+        </label>
+      </div>
+      <div class="row">
+        <label>组合策略
+          <select v-model="bcStrategy">
+            <option value="concat">concat</option><option value="interleave">interleave</option><option value="merged">merged</option>
+          </select>
+        </label>
+        <label>出场模式
+          <select v-model="bcMode">
+            <option value="">默认</option><option value="sequence">sequence</option><option value="weighted">weighted</option><option value="trigger">trigger</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" v-model="bcLoop" /> 循环</label>
+      </div>
+      <div class="row">
+        <button class="primary" @click="bcStart">开始广播</button>
+        <button @click="bcNext">下一个 ▶</button>
+        <button class="secondary" @click="bcReset">重置</button>
+      </div>
+      <div class="row">
+        <input v-model="bcCharId" placeholder="点名角色 ID（可选）" style="flex:1;min-width:160px" />
+        <button @click="bcTrigger">点名出场</button>
+      </div>
+      <p class="muted" v-if="bcState && bcState.active">
+        进行中：{{ (bcState.packIds||[]).join(', ') }} · 模式 {{ bcState.mode }} · 已出场 {{ bcState.progress ? bcState.progress.appeared : 0 }}
+        <template v-if="bcState.current"> · 当前：{{ bcState.current.name }}</template>
+      </p>
+      <p class="muted" v-else>尚未开始（或已重置）。</p>
+    </section>
+
     <footer class="muted">
       字段定义由后端驱动：{{ schema ? schema.characterFields.length : 0 }} 个角色字段 /
       {{ schema ? schema.packFields.length : 0 }} 个包字段
@@ -338,4 +565,6 @@ figcaption { display: flex; justify-content: space-between; align-items: center;
 .seq li { margin: 4px 0; }
 a.link { color: #2563eb; font-size: 13px; text-decoration: none; align-self: center; }
 a.link:hover { text-decoration: underline; }
+.sub { margin: 18px 0 10px; font-size: 14px; color: #374151; border-left: 3px solid #2563eb; padding-left: 8px; }
+.checks { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 8px 0; }
 </style>

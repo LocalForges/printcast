@@ -119,9 +119,11 @@ def _xiyouji() -> dict:
 def _pack(pack_id, title, mode, loop, desc, rows) -> dict:
     characters = []
     for cid, name, order, speech, tags, weight in rows:
+        # tags 以分号分隔的字符串传入，交给 schema.validate_pack 收敛成列表，
+        # 与用户从 CSV/JSON 导入的字段完全一致（不要预拆成 list，否则会被 _coerce 二次字符串化）。
         characters.append({
             'id': cid, 'name': name, 'order': order,
-            'speech': speech, 'tags': tags.split(';'), 'weight': weight,
+            'speech': speech, 'tags': tags, 'weight': weight,
         })
     return {
         'id': pack_id, 'title': title, 'mode': mode, 'loop': loop,

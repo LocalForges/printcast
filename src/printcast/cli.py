@@ -35,6 +35,8 @@ def parse_args(argv=None):
     # —— 内容包 / 出场调度 ——
     parser.add_argument('--seed', action='store_true',
                         help='把内置示例内容包（明朝十六帝 + 四故事包）写入 data/packs 后退出')
+    parser.add_argument('--overwrite', action='store_true',
+                        help='配合 --seed：覆盖已存在的内容包（默认跳过，避免覆盖用户数据）')
     parser.add_argument('--schedule', nargs='*', metavar='PACK',
                         help='预览指定内容包的出场顺序后退出；不跟包名则列出全部可用包')
     parser.add_argument('--strategy', default='concat',
@@ -129,7 +131,7 @@ def main(argv=None):
 
     if args.seed:
         from . import samples
-        result = samples.seed_builtin_packs()
+        result = samples.seed_builtin_packs(overwrite=args.overwrite)
         print('示例内容包已写入 data/packs/：')
         print('  新增 :', result['written'] or '（无）')
         print('  跳过 :', result['skipped'] or '（无）')

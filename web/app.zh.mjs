@@ -49,6 +49,9 @@ import * as THREE from '../assets/three.module.js';
 import {OrbitControls} from '../assets/OrbitControls.js';
 import {Reflector} from '../assets/Reflector.js';
 const $=id=>document.getElementById(id),stage=$('stage'),scene=new THREE.Scene();
+// —— 控制台设置（展示端只读，不写）：由 /__api/settings 提供品牌与打印规则，控制台优先。——
+let pcSettings=null;
+function mediaUrl(id){ if(!id) return ''; return /^[a-z0-9._-]+\.(?:png|jpe?g|webp)$/i.test(id) ? '/media/'+id : id; }
 const machineAudio=new PrinterAudio();
 scene.background=new THREE.Color('#d8c8b3');scene.fog=null;
 const camera=new THREE.PerspectiveCamera(36,1,.1,500);camera.position.set(6.8,9.6,24.5);const renderer=new THREE.WebGLRenderer({antialias:false,powerPreference:'high-performance'});renderer.setPixelRatio(2);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.localClippingEnabled=true;renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;stage.prepend(renderer.domElement);
@@ -442,6 +445,57 @@ const historyPanel=document.createElement('div');historyPanel.className='panel';
 connectionPanel.before(livePanel,historyPanel);
 const printRules=Object.assign({comment:true,join:false,like:false,follow:false,gift:true,giftVoice:true,joinVoice:true,idleFill:false,demoGapMs:30000},(()=>{try{const s=JSON.parse(localStorage.getItem('printRules')||'{}')||{};if(s.v!==2){delete s.gift;s.v=2}return s}catch(e){return{}}})());
 for(const [key,value] of Object.entries(PRINT_DEFAULTS)){if(printRules[key]===undefined)printRules[key]=value}
+// —— 控制台设置：展示端只读，不写。复用 settings-loader 的 window.__PC.ready（唯一一次 GET）。——
+// 控制台是唯一权威来源：printer.* 全部覆盖本地默认值；没有服务端时保留 localStorage 作为离线兜底。
+(async function loadConsoleSettings(){
+  try{
+    const s = (window.__PC && window.__PC.ready) ? await window.__PC.ready : null;
+    pcSettings = s || null;
+    if(!pcSettings) return;
+    const p = pcSettings.printer || {};
+    if(p.rules && typeof p.rules==='object') Object.assign(printRules,p.rules);
+    for(const k of ['demoGapMs','idleSeconds','idleFill']) if(p[k]!==undefined) printRules[k]=p[k];
+    if(typeof p.autoDemo==='boolean'){
+      autoDemo=p.autoDemo;
+      const btn=window.__autoDemoButton;
+      if(btn){ btn.textContent=autoDemo?'自动演示：开':'自动演示：关'; btn.setAttribute('aria-pressed',String(autoDemo)); }
+    }
+    const live=pcSettings.live||{};
+    const ri=$('room-input');
+    if(ri){
+      if(live.defaultRoom&&!ri.value) ri.value=live.defaultRoom;
+      ri.setAttribute('data-room-input','');
+      ri.placeholder=live.platform==='other'?'直播间号或直播链接':'抖音直播间号或链接，回车切换';
+    }
+    // 边界：配置由控制台统一设置，展示端的规则面板此时转为只读（先用控制台值重绘）。
+    const host=$('print-rules-body');
+    if(host){ renderPrintSettings(host,printRules,()=>{}); host.querySelectorAll('input,select').forEach(el=>{el.disabled=true}); }
+    const det=$('print-rules');
+    if(det){ const sum=det.querySelector('summary'); if(sum) sum.textContent='打印规则（控制台统一设置 · 只读）';
+      const note=det.querySelector('.note'); if(note) note.innerHTML='在 <a href="/studio/" style="color:var(--accent)">控制台 /studio</a> 修改后刷新展示页生效。'; }
+  }catch(e){}
+})();
+// —— M1：把出场广播的 view-appearance 接进 3D 打印队列，实现「讲到谁就打谁」——
+let appearanceCursor=null; const appearanceClient='renderer-'+Math.random().toString(36).slice(2,10);
+function enqueueAppearance(ap){
+  if(!ap||!ap.name) return;
+  if(pcSettings&&pcSettings.broadcast&&pcSettings.broadcast.scriptedPrint===false) return;
+  if(!printAllowed()) return;
+  queue.push({name:ap.name,avatar:mediaUrl(ap.avatar),size:'large',priority:false,
+    source:'剧本·'+(ap.packTitle||'内容包'),copy:1,total:1,scripted:true,speech:ap.speech||''});
+  renderQueue(); updateScreen();
+  if(pcSettings&&pcSettings.broadcast&&pcSettings.broadcast.speech!==false&&ap.speech&&giftSpeech) giftSpeech.say(ap.name,ap.speech,1);
+  next();
+}
+async function appearanceTick(){
+  try{
+    const r=await fetch('/__scene-events?client='+appearanceClient+(appearanceCursor===null?'':'&after='+appearanceCursor));
+    const d=await r.json(); appearanceCursor=d.cursor;
+    for(const m of (d.messages||[])){ if(m.type==='view-appearance'&&m.appearance) enqueueAppearance(m.appearance); }
+  }catch(e){}
+  appearanceTimer=setTimeout(appearanceTick,600);
+}
+let appearanceTimer=setTimeout(appearanceTick,600);
 printRules.v=2;
 function savePrintRules(){try{localStorage.setItem('printRules',JSON.stringify(printRules))}catch(e){}}
 renderPrintSettings($('print-rules-body'),printRules,savePrintRules);

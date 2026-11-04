@@ -55,4 +55,7 @@ export const api = {
   // 出场广播控制：POST /__api/broadcast
   broadcast: (action, body = {}) => req('POST', '/broadcast', { json: { action, ...body } }),
   getBroadcast: () => req('GET', '/broadcast'),
+  // 控制台设置（唯一可写配置来源；展示端只读）：GET/PUT /__api/settings
+  getSettings: () => req('GET', '/settings'),
+  saveSettings: (settings) => req('PUT', '/settings', { json: settings }),
 };

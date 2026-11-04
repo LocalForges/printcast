@@ -11,7 +11,22 @@ body.scene-only .layout{display:block;padding:0;gap:0}
 body.scene-only .layout>section.panel{margin:0;border:0;background:transparent;box-shadow:none}
 body.scene-only .canvas{width:100vw;height:100vh;border:0;border-radius:0}
 body.scene-only{background:#0b0e14}
-.ad-strip{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;background:#121a26;border-bottom:1px solid #2a3547;color:#b9c6d6;font-size:13.5px;padding:10px 22px;letter-spacing:.4px}
-
-
-.ad-strip .wx{background:#0d1420;border:1px solid #3a4658;border-radius:6px;padding:5px 14px;color:#ffbc79;font:600 14px Consolas,'Courier New',monospace;cursor:pointer}.ad-strip .wx:hover{border-color:#ffbc79;color:#ffd9a8}.ad-strip .wx.copied{border-color:#67e8ff;color:#67e8ff}.stagehead{justify-content:flex-start;gap:14px}.stagehead small{margin-left:auto}
+.stagehead{justify-content:flex-start;gap:14px}.stagehead small{margin-left:auto}
+:root{--accent:#4f8cff}
+header .brand b,header .tag,header a{color:var(--accent)}
+/* 公告条：内容全部来自控制台（默认关闭），页面不含任何硬编码文案。 */
+.announce{display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;padding:9px 22px;background:#121a26;border-bottom:1px solid #2a3547;color:#b9c6d6;font-size:13px}
+.announce[hidden]{display:none}
+.announce a{color:var(--accent);text-decoration:none}
+/* 亮色主题：由 display.theme 控制；展示端只渲染，不做配置。 */
+html[data-theme="light"] body{background:#f4f6fb;color:#1b2230}
+html[data-theme="light"] header{background:#fff;border-bottom-color:#d8deea}
+html[data-theme="light"] .panel,html[data-theme="light"] .card{background:#fff;border-color:#d8deea}
+html[data-theme="light"] .panelhead,html[data-theme="light"] .stagehead{border-bottom-color:#d8deea}
+html[data-theme="light"] p,html[data-theme="light"] .hint,html[data-theme="light"] .note,html[data-theme="light"] .status,html[data-theme="light"] .tag{color:#5a6678}
+html[data-theme="light"] .announce{background:#e9eef8;border-bottom-color:#d8deea;color:#33405a}
+html[data-theme="light"] .badge{background:#fff3e6;color:#8a5a12}
+html[data-theme="light"] .canvas{background:radial-gradient(ellipse at 50% 48%,#e8edf6,#cfd8e8 65%,#c3ccdd)}
+html[data-theme="light"] .result{background:#fff;color:#1b2230}
+html[data-theme="light"] button{background:#e8edf8;color:#1b2230;border-color:#c8d2e4}
+html[data-theme="light"] input,html[data-theme="light"] select{background:#fff;color:#1b2230;border-color:#c8d2e4}

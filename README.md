@@ -51,7 +51,7 @@ python -m printcast --server-only    # 或简写：printcast --server-only
 | `printcast --server-only` | 仅 HTTP 服务 + 自动开浏览器，用于纯前台调试 |
 | `printcast --port 8090` | 指定 HTTP 端口（默认 8080，被占时自动顺延） |
 | `printcast --room 123456 --capture` | 启动后直接打开直播间并开始抓取 |
-| `printcast --seed` | 把内置示例内容包（明朝十六帝 + 三国/水浒/红楼/西游）写入 `data/packs` 后退出 |
+| `printcast --seed [--overwrite]` | 把内置示例内容包（明朝十六帝 + 三国/水浒/红楼/西游）写入 `data/packs` 后退出；加 `--overwrite` 可覆盖已存在的同名包重新播种 |
 | `printcast --schedule [PACK...]` | 预览指定内容包的出场顺序后退出（不跟包名则列出全部可用包）；可配合 `--mode`/`--strategy`/`--count` |
 
 环境变量（不引入 dotenv 依赖，直接 `export` 即可）：
@@ -122,7 +122,7 @@ printcast/
 ├── scripts/          脚本      start.sh  start*.bat  run-*-forever.bat  vendor-assets.sh
 ├── assets/           静态资源  three.module.js  OrbitControls  Reflector  贴图  音频
 ├── docs/ exports/    截图封面 / 朗读文案导出
-└── extract-original-icons.py  wx-copy.js  ROADMAP.md  LICENSE  .gitignore
+└── ROADMAP.md  LICENSE  .gitignore
 ```
 
 采集层内部再切三块，各管一件事，互不纠缠：
@@ -148,6 +148,25 @@ printcast/
 > 命名原则：采集层不绑定平台（不叫 douyin-*，为多平台适配铺路）；JS 用 kebab-case、Python 用 snake_case；文件名即职责。
 
 **数据层是真正的业务逻辑，但不是前后端分离**：内容包 CRUD、导入校验、图片上传集中在 `src/printcast/` 的 `schema/storage/api` 一组纯模块里，通过 `/__api/*` 暴露给工作台页面。渲染主页面（111KB 的 WebGL/队列/信令逻辑）仍然独立、不进构建链——我们没有为了「架构好看」就给整站套上 HTTP 框架，只在真正需要 CRUD 的地方加了薄薄一层同域 API。真正的实时边界依旧是 WebSocket（`ws://127.0.0.1:8765`，Node 采集层 ↔ 浏览器渲染层）。
+
+### 控制台与展示端的边界（本里程碑明确）
+
+- **控制台 = 唯一的配置与状态来源**：`/studio`（Vue 工作台）与本地 Python API（`api.py` + `settings.py`）负责写一切——内容包、出场广播、打印规则、品牌与展示文案。展示端**绝不直接写配置**。
+- **展示端只读取、只渲染**：`web/settings-loader.js` 是展示端唯一的配置入口，只发一次 `GET /__api/settings`（返回 `{ok, settings}`，必须取 `settings` 本体），渲染品牌名、标语、页脚链接、强调色、主题、`演示模式` 徽标、公告条与直播间号默认值；渲染主页（`app.zh.mjs` / `app.en.mjs`）经 `window.__PC.ready` 复用同一份设置，不再各自 fetch。
+- **控制命令只在控制台**：`broadcast.html` 已改为**只读出场卡片**（仅 GET 状态与订阅 `/__scene-events`），开始 / 下一个 / 点名 / 重置全部移到 `/studio` 的广播控制区；渲染主页的打印规则面板在控制台设置生效后转为**只读**并指向 `/studio`。
+- **所有控制台设置都有真实消费方**：
+  | 设置 | 消费方 |
+  |---|---|
+  | `branding.*` | `settings-loader` 的 `[data-bind]` / `[data-bind-html]` / `[data-links]` / `--accent` |
+  | `display.theme` / `showDemoBadge` / `showAnnounce` / `announceText` | `settings-loader` + `app.css` 浅色主题与公告条样式 |
+  | `printer.rules` / `autoDemo` / `demoGapMs` / `idleFill` / `idleSeconds` | 两个渲染模块的 `printRules` 与自动演示开关 |
+  | `broadcast.defaultPacks` / `strategy` / `mode` / `loop` | 工作台广播表单初值（未开播时） |
+  | `broadcast.autoStart` | `server.auto_start_broadcast()`：服务启动即按默认参数开播，配置异常静默跳过 |
+  | `broadcast.speech` / `scriptedPrint` | M1 出场打印的门控 |
+  | `live.defaultRoom` / `platform` | 展示端回填房间号输入框与占位文案 |
+- **鉴权**：所有 `/__api/*` 与 `/__` 本机端点仅接受 Host 为 `127.0.0.1:<port>` 且 `Sec-Fetch-Site: same-origin` 的请求，防止外部站点借本地服务读写数据或拉起进程；`/__health` 除外（仅供存活探测）。
+- **静态页面全面参数化**：原先内嵌在 HTML 里的品牌名、广告条、联系方式、强调色已全部移除；`site/` 宣传页亦清除第三方署名与水印，仅保留 printcast 自有品牌。旧版硬编码广告条由控制台的 `display.showAnnounce` + `announceText` + `branding.links` 取代（默认关闭，无任何硬编码内容）。
+- **回归护栏**：`tests/settings-loader.test.mjs` 用最小 DOM 桩在 Node 里跑真实装载器，锁死「只 GET / 取 settings 本体 / 展示端不写配置」；`tests/test_settings.py` 覆盖布尔与数值收口、危险协议拒绝、未知分区剔除与 autoStart。
 
 **Python 包内部的依赖方向**：`cli → desktop/server/api → probe/relay → config`。`config` 不依赖任何兄弟模块；`desktop.py` 是唯一 import `webview` 的文件，所以 `--server-only` 不装桌面依赖也能启动；`api.py` 是纯函数分发层，`tests/test_api.py` 可直接调 `api.dispatch()` 而不起 HTTP 服务。
 
@@ -227,6 +246,7 @@ bash scripts/build-studio.sh
 
   ```bash
   python -m printcast --seed                                   # 写入内置示例包
+  python -m printcast --seed --overwrite                       # 覆盖已存在的内容包重新播种
   python -m printcast --schedule ming-emperors                 # 预览明朝十六帝出场顺序
   python -m printcast --schedule sanguo shuihu --strategy interleave   # 三国水浒轮流出场
   python -m printcast --schedule xiyouji --mode trigger        # 西游记按事件触发
@@ -242,6 +262,8 @@ bash scripts/build-studio.sh
   |---|---|
   | `GET /__api/schedule?pack=ming-emperors&mode=sequence&strategy=concat&count=8` | 纯函数计划预览（无状态），返回出场顺序与元数据 |
   | `POST /__api/broadcast` | 有状态控制：`{action: start\|next\|trigger\|reset, packs, mode, strategy, seed, charId, loop}`，把「下一个出场角色」经 `view-appearance` 广播给所有订阅 `/__scene-events` 的客户端 |
+  | `GET /__api/settings` | 读取全部控制台设置（branding / display / printer / broadcast / live），展示端只读此端点 |
+  | `PUT /__api/settings` | 以深合并方式写入设置并即时持久化（原子写 + 输入净化）；仅控制台（Studio）调用，展示端不写 |
 
 > 扩展更多人物零代码：在 `/studio/` 导入自定义内容包，或在 `data/packs/` 直接放 JSON，调度引擎会按 `order`/`weight`/`trigger` 自动驱动。`/broadcast.html` 与渲染主页共享同一 `SceneRelay` 通道，可作为 OBS 第二屏或主控大屏。
 

@@ -10,6 +10,7 @@ import re
 from dataclasses import dataclass, field
 
 from . import config, importer, schema, storage, templates
+from . import settings as settings_module
 from .scheduler import ContentScheduler
 
 _JSON = 'application/json; charset=utf-8'
@@ -92,6 +93,20 @@ def dispatch(method, path, query=None, headers=None, body=b''):
         return Response(200, data, ctype, {
             'Content-Disposition': 'attachment; filename="%s"' % filename,
         })
+
+    # —— 控制台设置（唯一可写配置来源；展示端只读）——
+    if path.startswith('/__api/settings'):
+        if method == 'GET':
+            return _ok({'ok': True, 'settings': settings_module.load_settings()})
+        if method in ('POST', 'PUT'):
+            try:
+                body = _json_body(body)
+            except ValueError as exc:
+                return _bad(str(exc))
+            if not isinstance(body, dict):
+                return _bad('设置必须是 JSON 对象')
+            return _ok({'ok': True, 'settings': settings_module.save_settings(body)})
+        return _bad('不支持的方法', 405)
 
     if path.startswith('/__api/packs'):
         pack_id = parts[2] if len(parts) > 2 else ''
