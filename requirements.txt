@@ -1,0 +1,6 @@
+# 核心服务零第三方依赖（只用 Python 标准库）。
+# 本文件存在的意义是让 `pip install -r requirements.txt` 也能走通标准流程；
+# 真正安装项目请用 `pip install -e .`（会注册 printcast 命令与 python -m printcast）。
+
+# —— 桌面窗口模式（可选）——
+# pywebview>=4.0 ; python_version>="3.9"  → 安装：pip install -e ".[desktop]"

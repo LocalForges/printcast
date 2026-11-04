@@ -1,19 +1,12 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0.."
-title Server Guard
+title Printcast Server Guard
+set "PYTHONPATH=%CD%\src;%PYTHONPATH%"
+set "PY=%CD%\.venv\Scripts\python.exe"
+if not exist "%PY%" set "PY=python"
 :loop
-netstat -ano | findstr ":8080" | findstr "LISTENING" >nul
-if not errorlevel 1 (
-    timeout /t 5 /nobreak >nul
-    goto loop
-)
-where python >nul 2>nul
-if not errorlevel 1 (
-    python src\desktop\desktop_launcher.py --server-only
-) else (
-    py -3 src\desktop\desktop_launcher.py --server-only
-)
+"%PY%" -m printcast --server-only --no-open-browser
 echo Server exited, restart in 3s...
 timeout /t 3 /nobreak >nul
 goto loop

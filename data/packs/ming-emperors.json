@@ -1,0 +1,173 @@
+{
+  "id": "ming-emperors",
+  "title": "明朝十六帝",
+  "mode": "sequence",
+  "loop": false,
+  "description": "按即位先后出场，从洪武到崇祯",
+  "characters": [
+    {
+      "id": "hongwu",
+      "name": "朱元璋",
+      "order": 1,
+      "speech": "洪武开基，驱元复汉，定鼎金陵",
+      "weight": 3.0,
+      "tags": [
+        "['开国'",
+        "'帝王']"
+      ]
+    },
+    {
+      "id": "jianwen",
+      "name": "朱允炆",
+      "order": 2,
+      "speech": "建文削藩，靖难起兵，宫闱一炬",
+      "weight": 1.0,
+      "tags": [
+        "['帝王']"
+      ]
+    },
+    {
+      "id": "yongle",
+      "name": "朱棣",
+      "order": 3,
+      "speech": "永乐靖难，迁都北京，郑和西洋",
+      "weight": 3.0,
+      "tags": [
+        "['迁都'",
+        "'帝王']"
+      ]
+    },
+    {
+      "id": "hongxi",
+      "name": "朱高炽",
+      "order": 4,
+      "speech": "洪熙守成，仁宣之治先声",
+      "weight": 1.0,
+      "tags": [
+        "['帝王']"
+      ]
+    },
+    {
+      "id": "xuande",
+      "name": "朱瞻基",
+      "order": 5,
+      "speech": "宣德善绘，促织之戏留名",
+      "weight": 1.0,
+      "tags": [
+        "['帝王']"
+      ]
+    },
+    {
+      "id": "zhengtong",
+      "name": "朱祁镇",
+      "order": 6,
+      "speech": "正统北狩，土木之变；天顺夺门",
+      "weight": 1.0,
+      "tags": [
+        "['帝王']"
+      ]
+    },
+    {
+      "id": "jingtai",
+      "name": "朱祁钰",
+      "order": 7,
+      "speech": "景泰监国，北京保卫战功成",
+      "weight": 1.0,
+      "tags": [
+        "['帝王']"
+      ]
+    },
+    {
+      "id": "chenghua",
+      "name": "朱见深",
+      "order": 8,
+      "speech": "成化宠溺，万贵妃专房",
+      "weight": 1.0,
+      "tags": [
+        "['帝王']"
+      ]
+    },
+    {
+      "id": "hongzhi",
+      "name": "朱祐樘",
+      "order": 9,
+      "speech": "弘治中兴，一夫一妻帝王",
+      "weight": 1.0,
+      "tags": [
+        "['帝王']"
+      ]
+    },
+    {
+      "id": "zhengde",
+      "name": "朱厚照",
+      "order": 10,
+      "speech": "正德游幸，豹房佞幸",
+      "weight": 1.0,
+      "tags": [
+        "['帝王']"
+      ]
+    },
+    {
+      "id": "jiajing",
+      "name": "朱厚熜",
+      "order": 11,
+      "speech": "嘉靖修道，海瑞上疏",
+      "weight": 1.0,
+      "tags": [
+        "['帝王']"
+      ]
+    },
+    {
+      "id": "longqing",
+      "name": "朱载坖",
+      "order": 12,
+      "speech": "隆庆开关，俺答封贡",
+      "weight": 1.0,
+      "tags": [
+        "['帝王']"
+      ]
+    },
+    {
+      "id": "wanli",
+      "name": "朱翊钧",
+      "order": 13,
+      "speech": "万历中兴，后期怠政",
+      "weight": 2.0,
+      "tags": [
+        "['帝王']"
+      ]
+    },
+    {
+      "id": "taichang",
+      "name": "朱常洛",
+      "order": 14,
+      "speech": "泰昌一月，红丸疑案",
+      "weight": 1.0,
+      "tags": [
+        "['帝王']"
+      ]
+    },
+    {
+      "id": "tianqi",
+      "name": "朱由校",
+      "order": 15,
+      "speech": "天启木工，魏忠贤乱政",
+      "weight": 1.0,
+      "tags": [
+        "['帝王']"
+      ]
+    },
+    {
+      "id": "chongzhen",
+      "name": "朱由检",
+      "order": 16,
+      "speech": "崇祯殉国，甲申之变，明亡",
+      "weight": 3.0,
+      "tags": [
+        "['亡国'",
+        "'帝王']"
+      ]
+    }
+  ],
+  "updated": "2026-11-04T04:33:22+00:00"
+}

@@ -1,0 +1,142 @@
+{
+  "id": "shuihu",
+  "title": "水浒传",
+  "mode": "sequence",
+  "loop": false,
+  "description": "梁山好汉按座次与戏份排序",
+  "characters": [
+    {
+      "id": "songjiang",
+      "name": "宋江",
+      "order": 1,
+      "speech": "呼保义，替天行道聚义厅",
+      "weight": 3.0,
+      "tags": [
+        "['梁山'",
+        "'首领']"
+      ]
+    },
+    {
+      "id": "lujunyi",
+      "name": "卢俊义",
+      "order": 2,
+      "speech": "玉麒麟，棍棒天下无对",
+      "weight": 2.0,
+      "tags": [
+        "['梁山'",
+        "'首领']"
+      ]
+    },
+    {
+      "id": "wuyong",
+      "name": "吴用",
+      "order": 3,
+      "speech": "智多星，运筹忠义堂",
+      "weight": 2.0,
+      "tags": [
+        "['梁山'",
+        "'谋士']"
+      ]
+    },
+    {
+      "id": "linchong",
+      "name": "林冲",
+      "order": 4,
+      "speech": "豹子头，风雪山神庙",
+      "weight": 3.0,
+      "tags": [
+        "['梁山'",
+        "'武将']"
+      ]
+    },
+    {
+      "id": "wusong",
+      "name": "武松",
+      "order": 5,
+      "speech": "行者，景阳冈打虎",
+      "weight": 3.0,
+      "tags": [
+        "['梁山'",
+        "'武将']"
+      ]
+    },
+    {
+      "id": "luzhishen",
+      "name": "鲁智深",
+      "order": 6,
+      "speech": "花和尚，倒拔垂杨柳",
+      "weight": 3.0,
+      "tags": [
+        "['梁山'",
+        "'武将']"
+      ]
+    },
+    {
+      "id": "lida",
+      "name": "李逵",
+      "order": 7,
+      "speech": "黑旋风，双斧嗜血",
+      "weight": 2.0,
+      "tags": [
+        "['梁山'",
+        "'武将']"
+      ]
+    },
+    {
+      "id": "huarong",
+      "name": "花荣",
+      "order": 8,
+      "speech": "小李广，神箭无双",
+      "weight": 2.0,
+      "tags": [
+        "['梁山'",
+        "'武将']"
+      ]
+    },
+    {
+      "id": "shijin",
+      "name": "史进",
+      "order": 9,
+      "speech": "九纹龙，少华山下拜师",
+      "weight": 1.0,
+      "tags": [
+        "['梁山'",
+        "'武将']"
+      ]
+    },
+    {
+      "id": "yangzhi",
+      "name": "杨志",
+      "order": 10,
+      "speech": "青面兽，卖刀杀牛二",
+      "weight": 1.0,
+      "tags": [
+        "['梁山'",
+        "'武将']"
+      ]
+    },
+    {
+      "id": "chaijin",
+      "name": "柴进",
+      "order": 11,
+      "speech": "小旋风，仗义疏财",
+      "weight": 1.0,
+      "tags": [
+        "['梁山'",
+        "'头领']"
+      ]
+    },
+    {
+      "id": "sunerniang",
+      "name": "孙二娘",
+      "order": 12,
+      "speech": "母夜叉，十字坡开店",
+      "weight": 1.0,
+      "tags": [
+        "['梁山'",
+        "'头领']"
+      ]
+    }
+  ],
+  "updated": "2026-11-04T04:33:22+00:00"
+}

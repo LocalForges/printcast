@@ -11,10 +11,22 @@ avatar-cache.json
 ws-samples/
 .output-test/
 
+# 虚拟环境（用户本地创建，绝不入库）
+.venv/
+venv/
+env/
+
 # 测试产物
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# 打包 / editable install 产物
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
 
 # 大体积运行时二进制（由 scripts/vendor-assets.sh 从上游还原）
 # three.module.js（1.3MB）是渲染层唯一的硬依赖，体积可接受，直接入库，避免首跑必须联网。
@@ -27,3 +39,5 @@ docs/screenshots/*.jpg
 docs/*.jpg
 tiktok-cover.png
 youtube-cover.png
+/studio/node_modules/
+/web/studio-dist/

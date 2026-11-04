@@ -30,8 +30,8 @@ fetch "$base/assets/three.module.js" "assets/three.module.js"
 
 echo "=== 2/5 音频 ==="
 fetch "$base/assets/printing-writing.wav" "assets/printing-writing.wav"
-fetch "$base/assets/robot-arm.wav" "assets/robot-arm.wav"
-fetch "$base/assets/audio-check.wav" "assets/audio-check.wav"
+fetch "$base/assets/robot-arm.wav"        "assets/robot-arm.wav"
+fetch "$base/assets/audio-check.wav"      "assets/audio-check.wav"
 
 echo "=== 3/5 场景贴图（房间背景 / 头像图集）==="
 for p in avatar-atlas garden home-window-v2 home linen live-rules-exact live-rules night oak plaster study workshop; do
@@ -48,7 +48,7 @@ for s in 01-3d-scene.jpg 02-rules-panel.png 03-print-log.png 04-main-page.jpg 05
   fetch "$base/docs/screenshots/$s" "docs/screenshots/$s"
 done
 fetch "$base/docs/tutorial-cover.jpg" "docs/tutorial-cover.jpg"
-fetch "$base/tiktok-cover.png" "tiktok-cover.png"
+fetch "$base/tiktok-cover.png"  "tiktok-cover.png"
 fetch "$base/youtube-cover.png" "youtube-cover.png"
 
 echo "=== vendor-assets done ==="

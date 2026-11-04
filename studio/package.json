@@ -1,0 +1,19 @@
+{
+  "name": "printcast-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "printcast 数据工作台：内容包管理 / 模板下载 / 数据导入 / 图片上传",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5174",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 5175"
+  },
+  "dependencies": {
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.0",
+    "vite": "^6.0.0"
+  }
+}

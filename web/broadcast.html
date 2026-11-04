@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>内容包出场广播 · printcast</title>
+<style>
+  :root { --bg:#0b0e14; --card:#141a26; --line:#26304a; --txt:#e8edf7;
+          --muted:#8b97ad; --accent:#4f8cff; --gold:#d9a441; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui,"PingFang SC","Microsoft YaHei",sans-serif;
+         background:var(--bg); color:var(--txt); }
+  header { padding:16px 22px; border-bottom:1px solid var(--line); display:flex;
+           align-items:baseline; gap:12px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; }
+  header .sub { color:var(--muted); font-size:13px; }
+  main { display:grid; grid-template-columns:340px 1fr; gap:22px; padding:22px; }
+  @media (max-width:820px){ main{ grid-template-columns:1fr; } }
+  .panel { background:var(--card); border:1px solid var(--line);
+           border-radius:12px; padding:16px; }
+  .panel h2 { font-size:14px; margin:0 0 12px; color:var(--muted);
+              text-transform:uppercase; letter-spacing:.05em; }
+  label { display:block; font-size:13px; color:var(--muted); margin:12px 0 4px; }
+  select, input, button { font:inherit; }
+  select, input[type=text], input[type=number] {
+    width:100%; padding:8px 10px; background:#0e1320; color:var(--txt);
+    border:1px solid var(--line); border-radius:8px; }
+  .packs { display:flex; flex-wrap:wrap; gap:8px; }
+  .packs label { display:flex; align-items:center; gap:6px; margin:0;
+                 background:#0e1320; border:1px solid var(--line);
+                 padding:6px 10px; border-radius:999px; color:var(--txt); cursor:pointer; }
+  .row { display:flex; gap:10px; }
+  .row > * { flex:1; }
+  button { cursor:pointer; border:1px solid var(--line); border-radius:8px;
+           padding:9px 12px; background:#1b2336; color:var(--txt); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button:active { transform:translateY(1px); }
+  .btns { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
+  .btns button { flex:1; min-width:120px; }
+  .stage { display:flex; flex-direction:column; align-items:center; justify-content:center;
+           min-height:420px; text-align:center; }
+  .avatar { width:180px; height:180px; border-radius:24px; object-fit:cover;
+            background:#1b2336; border:2px solid var(--line); }
+  .fallback { display:flex; align-items:center; justify-content:center;
+              font-size:84px; font-weight:700; color:var(--gold);
+              background:linear-gradient(135deg,#1b2336,#26304a); }
+  .name { font-size:34px; font-weight:700; margin:18px 0 4px; }
+  .pack { color:var(--muted); font-size:14px; }
+  .speech { margin-top:14px; font-size:17px; color:#cdd6e6; max-width:520px; }
+  .tags { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+  .tag { font-size:12px; color:var(--muted); border:1px solid var(--line);
+         border-radius:999px; padding:3px 10px; }
+  .progress { margin-top:18px; color:var(--muted); font-size:13px; }
+  .hint { color:var(--muted); font-size:12px; margin-top:8px; }
+  .status { font-size:13px; color:var(--muted); margin-top:10px; }
+  .pill { display:inline-block; background:#0e1320; border:1px solid var(--line);
+          border-radius:999px; padding:2px 10px; font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>内容包出场广播</h1>
+  <span class="sub">明朝皇帝 / 故事人物按出场顺序推送到所有打开本页的标签页</span>
+  <span style="margin-left:auto" class="pill" id="conn">连接中…</span>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>调度设置</h2>
+    <label>内容包（可多选，按策略组合）</label>
+    <div class="packs" id="packs"><span class="hint">加载中…</span></div>
+
+    <div class="row">
+      <div>
+        <label>组合策略</label>
+        <select id="strategy">
+          <option value="concat">concat · 顺次播完</option>
+          <option value="interleave">interleave · 轮转穿插</option>
+          <option value="merged">merged · 合并排序</option>
+        </select>
+      </div>
+      <div>
+        <label>出场模式</label>
+        <select id="mode">
+          <option value="sequence">sequence · 顺序</option>
+          <option value="weighted">weighted · 加权随机</option>
+          <option value="trigger">trigger · 事件触发</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>循环 loop</label>
+        <select id="loop"><option value="false">否</option><option value="true">是</option></select>
+      </div>
+      <div>
+        <label>随机种子 seed</label>
+        <input type="number" id="seed" placeholder="可选，复现用" />
+      </div>
+    </div>
+
+    <div class="btns">
+      <button class="primary" id="start">开始广播</button>
+      <button id="reset">重置</button>
+    </div>
+
+    <h2 style="margin-top:22px">单步 / 触发</h2>
+    <div class="btns">
+      <button id="next">下一个 ▶</button>
+    </div>
+    <label style="margin-top:14px">点名出场（trigger 模式或手动点名）</label>
+    <div class="row">
+      <select id="charSel"><option value="">— 选择角色 —</option></select>
+      <button id="trigger">触发</button>
+    </div>
+    <div class="status" id="status">尚未开始。</div>
+    <p class="hint">所有操作经 /__api/broadcast，并通过 SceneRelay 实时同步到其它标签页。
+       头像为空时显示姓名首字。</p>
+  </section>
+
+  <section class="panel">
+    <h2>出场卡片</h2>
+    <div class="stage" id="stage">
+      <div class="avatar fallback" id="avatar">—</div>
+      <div class="name" id="cname">等待出场…</div>
+      <div class="pack" id="cpack"></div>
+      <div class="speech" id="cspeech"></div>
+      <div class="tags" id="ctags"></div>
+      <div class="progress" id="cprogress"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const base = location.origin;  // 同域，无需 CORS
+const clientId = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()));
+
+async function api(path, body) {
+  const opt = { method: body ? 'POST' : 'GET', headers: {} };
+  if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+  const r = await fetch(base + path, opt);
+  if (!r.ok) throw new Error((await r.json()).error || ('HTTP ' + r.status));
+  return r.json();
+}
+
+function renderAppearance(a) {
+  if (!a) return;
+  const av = $('avatar');
+  if (a.avatar) {
+    av.className = 'avatar';
+    av.textContent = '';
+    av.style.background = '';
+    av.src = base + '/media/' + a.avatar;
+  } else {
+    av.removeAttribute('src');
+    av.className = 'avatar fallback';
+    av.textContent = (a.name || '?').slice(0, 1);
+  }
+  $('cname').textContent = a.name || '—';
+  $('cpack').textContent = [a.packTitle, a.mode && ('模式:' + a.mode),
+                            a.loop ? ('第' + (a.loop + 1) + '轮') : '']
+                            .filter(Boolean).join(' · ');
+  $('cspeech').textContent = a.speech || '';
+  $('ctags').innerHTML = (a.tags || []).map(t => '<span class="tag">' + t + '</span>').join('');
+  $('cprogress').textContent = a.index != null ? ('序号 #' + (a.index + 1)) : '';
+}
+
+async function refreshState() {
+  try {
+    const s = await api('/__api/broadcast');
+    const b = s.broadcast || {};
+    if (b.active) {
+      $('status').textContent = '进行中：' + (b.packIds || []).join(', ')
+        + ' · 模式 ' + b.mode + ' · 已出场 ' + (b.progress ? b.progress.appeared : 0);
+      if (b.current) renderAppearance(b.current);
+      await fillChars();
+    } else {
+      $('status').textContent = '尚未开始（或已重置）。';
+    }
+  } catch (e) { $('status').textContent = '状态读取失败：' + e.message; }
+}
+
+async function fillChars() {
+  try {
+    const p = await api('/__api/broadcast/plan?count=999');
+    const sel = $('charSel');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— 选择角色 —</option>'
+      + (p.appearances || []).map(a =>
+          '<option value="' + a.id + '">' + a.name + '（' + a.packId + '）</option>').join('');
+    sel.value = cur;
+  } catch (_) {}
+}
+
+async function loadPacks() {
+  try {
+    const d = await api('/__api/packs');
+    const wrap = $('packs');
+    if (!d.packs || !d.packs.length) {
+      wrap.innerHTML = '<span class="hint">没有内容包，先运行：python -m printcast --seed</span>';
+      return;
+    }
+    wrap.innerHTML = d.packs.map(p =>
+      '<label><input type="checkbox" value="' + p.id + '" checked> ' + p.title
+      + ' <span style="color:var(--muted)">(' + p.mode + ')</span></label>').join('');
+  } catch (e) { $('packs').innerHTML = '<span class="hint">加载失败：' + e.message + '</span>'; }
+}
+
+function selectedPacks() {
+  return [...document.querySelectorAll('#packs input:checked')].map(i => i.value);
+}
+
+$('start').onclick = async () => {
+  const packs = selectedPacks();
+  if (!packs.length) { $('status').textContent = '请至少选一个内容包。'; return; }
+  const body = { action: 'start', packs, strategy: $('strategy').value, mode: $('mode').value,
+                 loop: $('loop').value === 'true' };
+  if ($('seed').value !== '') body.seed = Number($('seed').value);
+  try { await api('/__api/broadcast', body); await refreshState(); }
+  catch (e) { $('status').textContent = '开始失败：' + e.message; }
+};
+$('next').onclick = async () => { try { await api('/__api/broadcast', { action: 'next' }); }
+  catch (e) { $('status').textContent = e.message; } };
+$('trigger').onclick = async () => {
+  const id = $('charSel').value;
+  try { await api('/__api/broadcast', { action: 'trigger', charId: id || undefined }); }
+  catch (e) { $('status').textContent = e.message; }
+};
+$('reset').onclick = async () => { try { await api('/__api/broadcast', { action: 'reset' });
+  await refreshState(); } catch (e) { $('status').textContent = e.message; } };
+
+// —— 实时同步：轮询 SceneRelay 的 view-appearance ——
+let cursor = null;
+async function poll() {
+  try {
+    const r = await fetch(base + '/__scene-events?client=' + clientId
+      + (cursor === null ? '' : '&after=' + cursor));
+    const d = await r.json();
+    cursor = d.cursor;
+    $('conn').textContent = '已连接 · 同步中';
+    for (const m of d.messages || []) {
+      if (m.type === 'view-appearance' && m.appearance) renderAppearance(m.appearance);
+    }
+  } catch (e) {
+    $('conn').textContent = '连接断开，重连中…';
+    await new Promise(r => setTimeout(r, 1500));
+  }
+  setTimeout(poll, 600);
+}
+
+loadPacks();
+refreshState();
+poll();
+</script>
+</body>
+</html>

@@ -1,0 +1,120 @@
+{
+  "id": "honglou",
+  "title": "红楼梦",
+  "mode": "sequence",
+  "loop": false,
+  "description": "金陵十二钗与贾府子弟按戏份排序",
+  "characters": [
+    {
+      "id": "baoyu",
+      "name": "贾宝玉",
+      "order": 1,
+      "speech": "衔玉而生，情根历劫",
+      "weight": 3.0,
+      "tags": [
+        "['主角'",
+        "'贾府']"
+      ]
+    },
+    {
+      "id": "daiyu",
+      "name": "林黛玉",
+      "order": 2,
+      "speech": "潇湘妃子，葬花吟愁",
+      "weight": 3.0,
+      "tags": [
+        "['主角'",
+        "'群芳']"
+      ]
+    },
+    {
+      "id": "baochai",
+      "name": "薛宝钗",
+      "order": 3,
+      "speech": "停机德，金锁配通灵",
+      "weight": 3.0,
+      "tags": [
+        "['主角'",
+        "'群芳']"
+      ]
+    },
+    {
+      "id": "wangxifeng",
+      "name": "王熙凤",
+      "order": 4,
+      "speech": "凤辣子，机关算尽",
+      "weight": 3.0,
+      "tags": [
+        "['贾府'",
+        "'管家']"
+      ]
+    },
+    {
+      "id": "jiamu",
+      "name": "贾母",
+      "order": 5,
+      "speech": "史太君，荣国府尊",
+      "weight": 2.0,
+      "tags": [
+        "['贾府'",
+        "'长辈']"
+      ]
+    },
+    {
+      "id": "tanchun",
+      "name": "贾探春",
+      "order": 6,
+      "speech": "敏探春，兴利除弊",
+      "weight": 2.0,
+      "tags": [
+        "['贾府'",
+        "'才女']"
+      ]
+    },
+    {
+      "id": "xiangyun",
+      "name": "史湘云",
+      "order": 7,
+      "speech": "憨湘云，醉眠芍药",
+      "weight": 2.0,
+      "tags": [
+        "['群芳'",
+        "'才女']"
+      ]
+    },
+    {
+      "id": "miaoyu",
+      "name": "妙玉",
+      "order": 8,
+      "speech": "槛外人，洁癖孤高",
+      "weight": 1.0,
+      "tags": [
+        "['群芳'",
+        "'方外']"
+      ]
+    },
+    {
+      "id": "qingwen",
+      "name": "晴雯",
+      "order": 9,
+      "speech": "撕扇千金笑，补裘病中",
+      "weight": 2.0,
+      "tags": [
+        "['贾府'",
+        "'丫鬟']"
+      ]
+    },
+    {
+      "id": "xifeng_husband",
+      "name": "贾琏",
+      "order": 10,
+      "speech": "琏二爷，偷娶尤二姐",
+      "weight": 1.0,
+      "tags": [
+        "['贾府'",
+        "'晚辈']"
+      ]
+    }
+  ],
+  "updated": "2026-11-04T04:33:22+00:00"
+}

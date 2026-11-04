@@ -1,0 +1,142 @@
+{
+  "id": "sanguo",
+  "title": "三国演义",
+  "mode": "sequence",
+  "loop": false,
+  "description": "三国群英按登场戏份排序",
+  "characters": [
+    {
+      "id": "liubei",
+      "name": "刘备",
+      "order": 1,
+      "speech": "汉室宗亲，仁德布于天下",
+      "weight": 2.0,
+      "tags": [
+        "['蜀汉'",
+        "'君主']"
+      ]
+    },
+    {
+      "id": "caocao",
+      "name": "曹操",
+      "order": 2,
+      "speech": "魏武挥鞭，挟天子令诸侯",
+      "weight": 3.0,
+      "tags": [
+        "['曹魏'",
+        "'奸雄']"
+      ]
+    },
+    {
+      "id": "sunquan",
+      "name": "孙权",
+      "order": 3,
+      "speech": "坐断东南，赤壁联刘拒曹",
+      "weight": 2.0,
+      "tags": [
+        "['东吴'",
+        "'君主']"
+      ]
+    },
+    {
+      "id": "zhugeliang",
+      "name": "诸葛亮",
+      "order": 4,
+      "speech": "鞠躬尽瘁，六出祁山",
+      "weight": 3.0,
+      "tags": [
+        "['蜀汉'",
+        "'谋臣']"
+      ]
+    },
+    {
+      "id": "guanyu",
+      "name": "关羽",
+      "order": 5,
+      "speech": "过五关斩六将，义薄云天",
+      "weight": 3.0,
+      "tags": [
+        "['蜀汉'",
+        "'武将']"
+      ]
+    },
+    {
+      "id": "zhangfei",
+      "name": "张飞",
+      "order": 6,
+      "speech": "当阳桥断喝，喝退曹兵",
+      "weight": 2.0,
+      "tags": [
+        "['蜀汉'",
+        "'武将']"
+      ]
+    },
+    {
+      "id": "zhaoyun",
+      "name": "赵云",
+      "order": 7,
+      "speech": "长坂坡单骑救主",
+      "weight": 2.0,
+      "tags": [
+        "['蜀汉'",
+        "'武将']"
+      ]
+    },
+    {
+      "id": "zhouyu",
+      "name": "周瑜",
+      "order": 8,
+      "speech": "赤壁火攻，羽扇纶巾",
+      "weight": 2.0,
+      "tags": [
+        "['东吴'",
+        "'谋臣']"
+      ]
+    },
+    {
+      "id": "simayi",
+      "name": "司马懿",
+      "order": 9,
+      "speech": "隐忍待时，三家归晋",
+      "weight": 2.0,
+      "tags": [
+        "['曹魏'",
+        "'谋臣']"
+      ]
+    },
+    {
+      "id": "luxun",
+      "name": "陆逊",
+      "order": 10,
+      "speech": "夷陵火烧连营",
+      "weight": 1.0,
+      "tags": [
+        "['东吴'",
+        "'谋臣']"
+      ]
+    },
+    {
+      "id": "huangzhong",
+      "name": "黄忠",
+      "order": 11,
+      "speech": "定军山斩夏侯渊",
+      "weight": 1.0,
+      "tags": [
+        "['蜀汉'",
+        "'武将']"
+      ]
+    },
+    {
+      "id": "diaochan",
+      "name": "貂蝉",
+      "order": 12,
+      "speech": "连环计离间董吕",
+      "weight": 1.0,
+      "tags": [
+        "['群芳'",
+        "'谋士']"
+      ]
+    }
+  ],
+  "updated": "2026-11-04T04:33:22+00:00"
+}

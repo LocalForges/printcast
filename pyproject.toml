@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "printcast"
+version = "0.3.0"
+description = "直播间弹幕驱动的 3D 打印直播台（采集→传输→渲染→桌面四层）"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "LocalForges" }]
+keywords = ["livestream", "3d-printing", "threejs", "webrtc", "webview"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Multimedia :: Video",
+]
+
+# 核心运行（--server-only / 静态服务 / 采集桥）零第三方依赖，只用标准库。
+dependencies = []
+
+[project.optional-dependencies]
+# 桌面窗口模式才需要 pywebview。纯净 venv 里跑 --server-only 无需安装。
+desktop = ["pywebview>=4.0"]
+test = ["pytest>=7.0"]
+
+[project.scripts]
+printcast = "printcast.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/LocalForges/printcast"
+Source = "https://github.com/LocalForges/printcast"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["printcast*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 110
+target-version = "py39"

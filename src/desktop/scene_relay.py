@@ -1,33 +1,15 @@
-"""Bounded, local-only signalling for separately isolated WebView profiles."""
-from collections import deque
-from threading import Condition
-import time
+"""兼容入口（薄转发）—— 实际实现已迁至 src/printcast/relay.py。
 
-class SceneRelay:
-    def __init__(self):
-        self.condition = Condition()
-        self.sequence = 0
-        self.events = deque(maxlen=256)
+保留本文件供旧的 sys.path 引用（tests、外部脚本）继续使用。
+新代码请用：from printcast.relay import SceneRelay
+"""
+import sys
+from pathlib import Path
 
-    def publish(self, client, message):
-        if not isinstance(client, str) or not 1 <= len(client) <= 80:
-            raise ValueError('bad client')
-        if not isinstance(message, dict) or message.get('type') not in {
-            'view-request','view-offer','view-answer','view-ice','view-ping',
-            'view-ready','view-bye','view-size','view-stats','view-camera',
-            'view-camera-request','view-camera-change'}:
-            raise ValueError('bad message')
-        with self.condition:
-            self.sequence += 1
-            self.events.append((self.sequence, client, message))
-            self.condition.notify_all()
+_SRC = str(Path(__file__).resolve().parents[1])
+if _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
 
-    def poll(self, client, after=None, timeout=15):
-        with self.condition:
-            if after is None:
-                return {'cursor':self.sequence, 'messages':[]}
-            deadline = time.monotonic() + timeout
-            while self.sequence <= after and time.monotonic() < deadline:
-                self.condition.wait(max(0, deadline-time.monotonic()))
-            return {'cursor':self.sequence,
-                'messages':[m for n,c,m in self.events if n>after and c!=client]}
+from printcast.relay import SceneRelay  # noqa: E402,F401
+
+__all__ = ['SceneRelay']
