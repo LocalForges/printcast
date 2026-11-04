@@ -4,6 +4,20 @@
 
 ---
 
+## 出场广播自动播放 + 开机即播（2026-11-05）
+
+「画面不能播放」的根因是展示端只读、必须由控制台持续「推进下一个」才会动，而此前**没有任何自动推进机制**，且默认 `autoStart=false`，于是展示页一直停在「等待出场」。本轮补齐自动播放：
+
+- **服务端定时器自动推进**：`BroadcastController` 新增 `play(intervalMs, loop)` / `pause()`，用守护 `Timer` 线程按间隔自动 `next()` 出场；序列结束按 `loop` 决定重置续播或停止。`_play_gen` 代次令牌避免暂停后滞留 tick 重新挂起播放。`playing` / `intervalMs` 写入 `runtime_state`，重启后自动续播。
+- **端点**：`POST /__api/broadcast/play` 与 `/pause`（action 取自 URL 子路径或 body；间隔下限 200ms、上限 60s）。
+- **开机即播**：`auto_start_broadcast` 在配置 `autoStart` + `defaultPacks` 时启动，并在 `autoPlay=true` 时直接自动播放（恢复的上次广播若未播也续播）。默认配置已设为 `autoStart/autoPlay=true`、`defaultPacks=[ming-emperors]`、间隔 5s、循环。
+- **Studio 控制**：出场广播页新增「自动播放 / 暂停播放」按钮与「自动播放中 / 已暂停」状态。
+- **注意**：设置以 SQLite 为唯一事实来源，`data/settings.json` 仅是镜像；改配置请走 `/__api/settings` 或 `settings.save_settings`，直接改 JSON 无效。
+
+回归：`tests/test_broadcast_play.py` 4 项端到端测试全绿（启动不自动推进、`play` 持续推进、`pause` 停止、序列结束停播、非法间隔 400）。
+
+---
+
 ## 数据落库 + 缺陷修复 + M2 资产降级 + CI（2026-11-05）
 
 三项用户指令：**1. 修复已知问题；2. 数据落库；3. 原始测试数据落盘落库并跑通**。本轮在保持「控制台写 / 展示端只读」边界与零第三方依赖的前提下完成。

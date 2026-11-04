@@ -121,6 +121,7 @@ async function refreshStatus() {
 }
 
 const bcState = computed(() => (status.value && status.value.broadcast) || { active: false });
+const bcPlaying = computed(() => !!(bcState.value && bcState.value.playing));
 const lights = computed(() => [
   { key: 'service', label: '本机服务', on: !!status.value, detail: status.value ? '端口 ' + status.value.service.port : '未连通' },
   { key: 'bridge', label: '数据桥', on: !!(status.value && status.value.bridge && status.value.bridge.ok),
@@ -662,6 +663,20 @@ async function bcReset() {
     flash('广播已重置');
   } catch (e) { flash(e.message, true); }
 }
+async function bcPlay() {
+  try {
+    await api.broadcast('play', { intervalMs: 5000, loop: bcLoop.value });
+    await Promise.all([refreshStatus(), loadAudit()]);
+    flash('已启动自动播放');
+  } catch (e) { flash(e.message, true); }
+}
+async function bcPause() {
+  try {
+    await api.broadcast('pause');
+    await Promise.all([refreshStatus(), loadAudit()]);
+    flash('已暂停自动播放');
+  } catch (e) { flash(e.message, true); }
+}
 
 // —— 本机窗口与数据桥（后端已实现，控制台此前从未接入）——
 async function openPrinter() {
@@ -911,6 +926,7 @@ onUnmounted(() => {
             <div class="row">
               <button class="btn primary" @click="bcStart">开始 / 重启广播</button>
               <button class="btn" :disabled="!bcState.active" @click="bcNext">下一个</button>
+              <button class="btn" :disabled="!bcState.active" @click="bcPlaying ? bcPause() : bcPlay()">{{ bcPlaying ? '暂停播放' : '自动播放' }}</button>
               <button class="btn ghost" :disabled="!bcState.active" @click="ask('reset-broadcast')">重置</button>
             </div>
             <div class="row">
@@ -919,6 +935,7 @@ onUnmounted(() => {
             </div>
             <div class="state-line">
               <span :class="bcState.active ? 'tag ok' : 'tag mute'">{{ bcState.active ? '进行中' : '待机' }}</span>
+              <span v-if="bcState.active" :class="bcState.playing ? 'tag ok' : 'tag mute'">{{ bcState.playing ? '自动播放中' : '已暂停（手动）' }}</span>
               <span class="muted" v-if="bcState.active">{{ (bcState.packIds || []).join(', ') }} · 模式 {{ bcState.mode }} · seed {{ bcState.seed === null || bcState.seed === undefined ? '未固定' : bcState.seed }} · 已出场 {{ bcState.seq || 0 }}<template v-if="currentChar"> · 当前 {{ currentChar.name }}</template></span>
               <span class="muted" v-else>尚未开始或已重置。</span>
             </div>

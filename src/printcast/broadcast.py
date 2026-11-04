@@ -38,6 +38,11 @@ class BroadcastController:
         self.current = None
         self.seq = 0
         self.started_at = None
+        # 自动播放（定时器推进）运行态。
+        self.playing = False
+        self.interval_ms = 4000
+        self._play_timer = None
+        self._play_gen = 0
         if restore:
             self.restore()
 
@@ -68,6 +73,12 @@ class BroadcastController:
             self.current = None
             self.seq = 0
             self.started_at = time.time()
+            # 重新开播必须先停掉任何在跑的自动播放定时器，避免两个推进源互相打架。
+            self.playing = False
+            self._play_gen += 1
+            if self._play_timer is not None:
+                self._play_timer.cancel()
+                self._play_timer = None
             self.scheduler.reset()
             self._persist()
             return self.state()
@@ -76,6 +87,12 @@ class BroadcastController:
         with self._lock:
             if self.scheduler is None:
                 raise BroadcastError('尚未开始广播，请先 start')
+            # 重置视为完全停播，清掉自动播放定时器。
+            self.playing = False
+            self._play_gen += 1
+            if self._play_timer is not None:
+                self._play_timer.cancel()
+                self._play_timer = None
             self.scheduler.reset()
             self.current = None
             self.seq = 0
@@ -96,6 +113,78 @@ class BroadcastController:
             ap = self._require().trigger(char_id)
             if ap is None:
                 raise BroadcastError('没有可触发的角色' + (f'：{char_id}' if char_id else ''))
+            return self._publish(ap)
+
+    # —— 自动播放（定时器推进）——
+    # 展示端只读，必须有人持续「推进下一个」画面才会动。自动播放用一个守护 Timer
+    # 线程按 interval_ms 反复调用 _step()，让开播后无需手动点击也能连续出场。
+    # _play_gen 是代次令牌：play/pause/start/reset 都让它自增并使旧定时器失效，
+    # 避免暂停后仍有滞留的 tick 重新挂起播放（竞态导致「暂停即续播」）。
+
+    def play(self, interval_ms=None, loop=None):
+        with self._lock:
+            if self.scheduler is None:
+                raise BroadcastError('尚未开始广播，请先 start')
+            if interval_ms is not None:
+                try:
+                    iv = int(interval_ms)
+                except (TypeError, ValueError):
+                    raise BroadcastError('intervalMs 必须是整数（毫秒）')
+                if iv < 200 or iv > 60000:
+                    raise BroadcastError('intervalMs 需在 200–60000 毫秒之间')
+                self.interval_ms = iv
+            if loop is not None:
+                self.scheduler.loop = bool(loop)
+            self.playing = True
+            self._persist()
+        self._arm_timer()
+        return self.state()
+
+    def pause(self):
+        with self._lock:
+            was_playing = self.playing
+            self.playing = False
+            self._play_gen += 1
+            if self._play_timer is not None:
+                self._play_timer.cancel()
+                self._play_timer = None
+            if was_playing:
+                self._persist()
+        return self.state()
+
+    def _arm_timer(self):
+        # 调用方不持有锁。
+        self._play_gen += 1
+        gen = self._play_gen
+        timer = threading.Timer(self.interval_ms / 1000.0, self._tick, args=(gen,))
+        timer.daemon = True
+        timer.start()
+        self._play_timer = timer
+
+    def _tick(self, gen):
+        if gen != self._play_gen or not self.playing or self.scheduler is None:
+            return
+        state = self._step()
+        if state is None:
+            with self._lock:
+                self.playing = False
+                self._persist()
+            return
+        if self.playing and gen == self._play_gen:
+            self._arm_timer()
+
+    def _step(self):
+        """推进一位并发布；序列结束且非 loop 时返回 None。调用方不持有锁。"""
+        with self._lock:
+            if self.scheduler is None:
+                return None
+            ap = self.scheduler.next()
+            if ap is None and self.scheduler.loop:
+                # 兜底：极少数调度器在 loop 边界返回 None 的实现，这里续播一次。
+                self.scheduler.reset()
+                ap = self.scheduler.next()
+            if ap is None:
+                return None
             return self._publish(ap)
 
     def _publish(self, ap):
@@ -127,11 +216,13 @@ class BroadcastController:
                 'packIds': self.pack_ids,
                 'strategy': self.strategy,
                 'seed': self.seed,
-                'mode': self.scheduler.mode,
-                'loop': self.scheduler.loop,
-                'seq': self.seq,
-                'current': self.current,
-                'progress': self.scheduler.progress(),
+            'mode': self.scheduler.mode,
+            'loop': self.scheduler.loop,
+            'seq': self.seq,
+            'playing': self.playing,
+            'intervalMs': self.interval_ms,
+            'current': self.current,
+            'progress': self.scheduler.progress(),
             }
 
     def plan(self, count: Optional[int] = None) -> dict:
@@ -164,6 +255,8 @@ class BroadcastController:
                 'loop': self.scheduler.loop,
                 'seq': self.seq,
                 'current': self.current,
+                'playing': self.playing,
+                'intervalMs': self.interval_ms,
                 'scheduler': self.scheduler.snapshot_state(),
             })
         except Exception as exc:  # 落库失败不能拖垮直播流程，但要留下痕迹
@@ -206,4 +299,9 @@ class BroadcastController:
             self.current = snap.get('current')
             self.seq = int(snap.get('seq') or 0)
             self.started_at = snap.get('startedAt')
+            self.playing = bool(snap.get('playing'))
+            self.interval_ms = int(snap.get('intervalMs') or 4000)
+        # 重启后若上次正在自动播放，重新挂起定时器，避免「重启即停播」。
+        if self.playing and self.scheduler is not None:
+            self._arm_timer()
         return True

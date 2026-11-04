@@ -53,11 +53,14 @@ DEFAULT_SETTINGS = {
         'idleSeconds': 30,
     },
     'broadcast': {
-        'defaultPacks': [],
+        'defaultPacks': ['ming-emperors'],
         'strategy': 'concat',
-        'mode': '',
-        'loop': False,
-        'autoStart': False,
+        'mode': 'sequence',
+        'loop': True,
+        # 出场广播默认开机即播：启动后自动开播并连续出场，展示端无需手动点「推进下一个」。
+        'autoStart': True,
+        'autoPlay': True,
+        'autoPlayIntervalMs': 5000,
         'speech': True,
         # M1：把出场角色也打到 3D 打印机（"讲到谁就打谁"），默认开启。
         'scriptedPrint': True,
@@ -170,6 +173,7 @@ def _sanitize_settings(data: dict) -> dict:
         ('printer', 'idleFill', False),
         ('broadcast', 'loop', False),
         ('broadcast', 'autoStart', False),
+        ('broadcast', 'autoPlay', False),
         ('broadcast', 'speech', True),
         ('broadcast', 'scriptedPrint', True),
     )
@@ -185,6 +189,11 @@ def _sanitize_settings(data: dict) -> dict:
                                   DEFAULT_SETTINGS['printer']['demoGapMs'], maximum=600000)
     printer['idleSeconds'] = _as_int(printer.get('idleSeconds'),
                                      DEFAULT_SETTINGS['printer']['idleSeconds'], 5, 3600)
+    # 自动播放间隔：200ms–60s 之间收口，越界回退默认 5000ms。
+    broadcast = data.setdefault('broadcast', {})
+    broadcast['autoPlayIntervalMs'] = _as_int(broadcast.get('autoPlayIntervalMs'),
+                                              DEFAULT_SETTINGS['broadcast']['autoPlayIntervalMs'],
+                                              200, 60000)
     display = data.setdefault('display', {})
     if display.get('theme') not in ('dark', 'light'):
         display['theme'] = 'dark'

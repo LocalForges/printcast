@@ -137,39 +137,52 @@ def test_reset(tmp_path, monkeypatch):
 
 
 def test_auto_start_broadcast_is_console_driven(tmp_path, monkeypatch):
-    """autoStart / defaultPacks / strategy / mode / loop 由控制台设置驱动后端开播。"""
+    """autoStart / defaultPacks / strategy / mode / loop / autoPlay 由控制台设置驱动后端开播。"""
     from printcast import server
     _use_tmp(tmp_path, monkeypatch)
 
     class FakeBroadcast:
         def __init__(self):
-            self.calls = []
+            self.start_calls = []
+            self.play_calls = []
 
         def start(self, **kwargs):
-            self.calls.append(kwargs)
+            self.start_calls.append(kwargs)
             return {'ok': True}
 
+        def play(self, interval_ms=None, loop=None):
+            self.play_calls.append({'interval_ms': interval_ms, 'loop': loop})
+            return {'ok': True}
+
+    # 开启后应按设置 start，并因 autoPlay 默认开启而自动 play。
     fake = FakeBroadcast()
     settings_module.save_settings({'broadcast': {
         'autoStart': True, 'defaultPacks': ['ming-emperors'],
         'strategy': 'interleave', 'mode': 'weighted', 'loop': True,
     }})
     server.auto_start_broadcast(fake)
-    assert len(fake.calls) == 1
-    call = fake.calls[0]
+    assert len(fake.start_calls) == 1
+    call = fake.start_calls[0]
     assert call['pack_ids'] == ['ming-emperors']
     assert call['strategy'] == 'interleave'
     assert call['mode'] == 'weighted'
     assert call['loop'] is True
+    # autoPlay 默认开启 → 开播后自动 play；autoPlayIntervalMs 默认 5000。
+    assert fake.play_calls
+    assert fake.play_calls[0]['interval_ms'] == 5000
+    assert fake.play_calls[0]['loop'] is True
 
-    # 默认关闭时不应开播；配置非法（包不存在）也不能抛异常拖垮服务启动。
-    settings_module.reset_settings()
+    # autoStart 显式关闭时不应开播、也不应自动播放。
+    settings_module.save_settings({'broadcast': {'autoStart': False}})
     never = FakeBroadcast()
     server.auto_start_broadcast(never)
-    assert never.calls == []
+    assert never.start_calls == []
+    assert never.play_calls == []
+    # 配置非法（包不存在）也不能抛异常拖垮服务启动，且不应触达 play。
     settings_module.save_settings({'broadcast': {
         'autoStart': True, 'defaultPacks': ['does-not-exist'],
     }})
     broken = FakeBroadcast()
     broken.start = lambda **kw: (_ for _ in ()).throw(RuntimeError('bad pack'))
     assert server.auto_start_broadcast(broken) is None
+    assert broken.play_calls == []

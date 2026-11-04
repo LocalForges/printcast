@@ -47,7 +47,7 @@ ROOM_RE = re.compile(r'\d{5,25}')
 SCENE_PATH_RE = re.compile(r'/[A-Za-z0-9_\-]+/[A-Za-z0-9_\-]+\.html\?scene=1')
 
 # 广播端点只认精确路径与白名单子动作，避免 /__api/broadcasting 之类误命中。
-_BROADCAST_SUBS = frozenset(('', 'plan', 'start', 'next', 'trigger', 'reset'))
+_BROADCAST_SUBS = frozenset(('', 'plan', 'start', 'next', 'trigger', 'reset', 'play', 'pause'))
 
 
 def broadcast_sub(clean):
@@ -170,32 +170,51 @@ class _BridgeKeeper:
 
 
 def auto_start_broadcast(broadcast):
-    """控制台设置里 autoStart 为真时，服务启动即按默认参数开播。
+    """控制台设置里 autoStart 为真时，服务启动即按默认参数开播，autoPlay 时自动播放。
 
-    优先保留从 SQLite 恢复的上次广播（含 seed 与进度）；只有没恢复成功时才
+    优先保留从 SQLite 恢复的上次广播（含 seed、进度与播放态）；只有没恢复成功时才
     按设置重新开播，并沿用上次同组内容包的 seed，避免「重启后序列不可复现」。
     配置问题不允许拖垮 HTTP 服务启动，但要留痕，不能静默吞掉。
     """
+    try:
+        cfg = settings_module.load_settings().get('broadcast') or {}
+    except Exception:
+        cfg = {}
     state_fn = getattr(broadcast, 'state', None)
     if callable(state_fn):
         try:
-            if state_fn().get('active'):
+            st = state_fn()
+            if st.get('active'):
+                # 已恢复的上次广播：配置要求自动播放且当前未播，则续播。
+                if cfg.get('autoPlay') and not st.get('playing'):
+                    try:
+                        broadcast.play(interval_ms=cfg.get('autoPlayIntervalMs'),
+                                       loop=cfg.get('loop'))
+                    except Exception as exc:
+                        print('[printcast] autoStart 续播失败：%s' % exc, file=sys.stderr)
                 return None
         except Exception:
             pass
+    if not cfg.get('autoStart') or not cfg.get('defaultPacks'):
+        return None
+    last = db.get_state('broadcast') or {}
+    seed = (last.get('seed')
+            if list(last.get('packIds') or []) == list(cfg['defaultPacks']) else None)
     try:
-        cfg = settings_module.load_settings().get('broadcast') or {}
-        if not cfg.get('autoStart') or not cfg.get('defaultPacks'):
-            return None
-        last = db.get_state('broadcast') or {}
-        seed = (last.get('seed')
-                if list(last.get('packIds') or []) == list(cfg['defaultPacks']) else None)
-        return broadcast.start(
+        result = broadcast.start(
             pack_ids=cfg['defaultPacks'],
             strategy=cfg.get('strategy') or 'concat',
             mode=cfg.get('mode') or None,
             seed=seed,
             loop=cfg.get('loop'))
+        if cfg.get('autoPlay'):
+            try:
+                broadcast.play(interval_ms=cfg.get('autoPlayIntervalMs'),
+                               loop=cfg.get('loop'))
+            except Exception as exc:  # 自动播放失败不应拖垮已开播的广播
+                print('[printcast] autoStart 自动播放失败：%s' % exc, file=sys.stderr)
+                audit_write('broadcast.autostart', '', False, str(exc)[:200], 500)
+        return result
     except Exception as exc:  # 设置问题绝不能拖垮 HTTP 服务启动
         print('[printcast] autoStart 开播失败：%s' % exc, file=sys.stderr)
         audit_write('broadcast.autostart', '', False, str(exc)[:200], 500)
@@ -474,6 +493,13 @@ def make_handler(active_port):
                     result = broadcast.trigger(body.get('charId') or body.get('char_id'))
                 elif action == 'reset':
                     result = broadcast.reset()
+                elif action == 'play':
+                    result = broadcast.play(
+                        interval_ms=body.get('intervalMs')
+                        if 'intervalMs' in body else body.get('interval'),
+                        loop=body.get('loop'))
+                elif action == 'pause':
+                    result = broadcast.pause()
                 elif action == 'plan':
                     raw_count = body.get('count')
                     try:
