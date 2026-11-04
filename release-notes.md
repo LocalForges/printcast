@@ -4,6 +4,19 @@
 
 ---
 
+## 稳定性修复（2026-11-04 晚）
+
+针对实测反馈「工作台连接受阻 / `/__scene-events` 刷 404 / 内容包读不到」：
+
+- **双响应根因**：`server.py::_json()` 没有返回值，`do_GET` 的路由循环因此判断失效——自定义端点发完响应后仍掉进静态文件回退，再叠一个 404，污染浏览器连接并持续抛 `OSError: [Errno 41] Protocol wrong type for socket`。现返回哨兵值，并给 `send_error` 加了写失败兜底。
+- **本机鉴权过严**：Host 白名单从仅 `127.0.0.1` 扩到 `127.0.0.1` / `localhost` / `::1`；`Sec-Fetch-Site` 缺失时不再一律拒绝（Safari 等非 Chromium 浏览器不发该头）。跨站 `cross-site` 与外部 Host 仍拒绝。此前用 `localhost` 打开工作台会让所有 `/__api/*` 返回 403，表现为内容包列表空、工作台连不上。
+- **工作台开箱即用**：`web/studio-dist/` 构建产物（约 96 KB）纳入版本库，全新 clone 后 `/studio/` 无需先跑 `bash scripts/build-studio.sh`；产物缺失时服务端返回带构建指引与后端连通检测的引导页，而不是裸 404。
+- **工作台重做视觉与连接状态**：浅/深色双主题、分区导航、统一表单与表格；顶部显示后端地址、连通结果与失败原因（含 403 的具体提示）；内容包读取失败时明确提示「内置示例包仍在 `data/packs/`，并未被删除」。
+- **页脚链接**：`settings-loader.js` 对含 `[data-links]` 的容器不再整块 `textContent` 覆盖；`index.html` / `index-en.html` 把页脚文案与链接宿主拆成兄弟节点。
+- 回归：pytest 89 + 5 subtests、node 66/66、Studio 构建通过；端到端冒烟覆盖 localhost、无 `Sec-Fetch-Site`、`/__scene-events` 单响应，服务端异常计数 0。
+
+---
+
 ## 当前版本：控制台 / 展示端分离架构（本里程碑）
 
 本次收口重构，明确了**控制台（后端）** 与**展示端（前端）** 的边界，并把所有展示内容改为由控制台参数化驱动。

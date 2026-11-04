@@ -2,6 +2,7 @@
 # 构建数据工作台（Vue + Vite）生产产物到 web/studio-dist/。
 # 主服务以 /studio/ 前缀托管该目录，因此构建后打开 http://127.0.0.1:8080/studio/ 即可使用。
 # 仅需在有改 studio/ 源码时重新运行；纯 Python / 渲染页改动无需此步。
+# 产物 web/studio-dist/ 已入库（clone 即用），所以重构建后请把产物一并提交。
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE/../studio"

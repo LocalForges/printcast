@@ -21,6 +21,12 @@ function el(tag, attrs = {}) {
     getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; },
     setAttribute(k, v) { this.attrs[k] = String(v); },
     appendChild(c) { this.childNodes.push(c); return c; },
+    insertBefore(c, ref) { const i = ref ? this.childNodes.indexOf(ref) : -1;
+      this.childNodes.splice(i < 0 ? this.childNodes.length : i, 0, c); return c; },
+    querySelector(sel) {
+      if (sel !== '[data-links]') return null;
+      return this.childNodes.find((c) => c.attrs && c.attrs['data-links'] !== undefined) || null;
+    },
   };
   let html = '';
   Object.defineProperty(node, 'innerHTML', {
@@ -45,6 +51,7 @@ function run(settings, nodes = {}) {
     documentElement: { style: rootStyle, setAttribute(k, v) { rootAttrs[k] = v; }, attrs: rootAttrs },
     querySelectorAll(sel) { return all[sel] || []; },
     createElement(tag) { return el(tag); },
+    createTextNode(text) { return { nodeType: 3, nodeValue: String(text) }; },
   };
   const sandbox = {
     document,
@@ -98,6 +105,27 @@ test('品牌 / 主题 / 链接全部按控制台值渲染', async () => {
   assert.equal(linksHost.childNodes.length, 1);
   assert.equal(linksHost.childNodes[0].href, '/site/guide.html');
   assert.equal(linksHost.childNodes[0].textContent, '教程');
+});
+
+test('页脚容器含 [data-links] 时，绑定文本不得删掉链接宿主', async () => {
+  const footer = el('footer', { 'data-bind': 'branding.footer' });
+  const textNode = { nodeType: 3, nodeValue: '旧页脚' };
+  const linksHost = el('span', { 'data-links': '' });
+  footer.childNodes = [textNode, linksHost];
+  const { ready } = run(BASE, { bind: [footer], links: [linksHost] });
+  await ready;
+  assert.equal(textNode.nodeValue, '页脚 <b>来自控制台</b>');
+  assert.ok(footer.childNodes.includes(linksHost), '链接宿主必须保留');
+  assert.equal(linksHost.childNodes.length, 1, '控制台链接仍须渲染');
+  assert.equal(linksHost.childNodes[0].href, '/site/guide.html');
+});
+
+test('展示页页脚把 data-bind 与 data-links 拆成兄弟节点', () => {
+  for (const f of ['index.html', 'index-en.html']) {
+    const s = fs.readFileSync(path.join(WEB, f), 'utf8');
+    assert.ok(!/<footer[^>]*data-bind/.test(s),
+      `${f} 的 footer 不应直接带 data-bind（整块 textContent 会删掉链接容器）`);
+  }
 });
 
 test('showDemoBadge=false 隐藏徽标；showAnnounce=false 隐藏公告条', async () => {

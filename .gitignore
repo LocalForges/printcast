@@ -45,4 +45,5 @@ docs/*.jpg
 tiktok-cover.png
 youtube-cover.png
 /studio/node_modules/
-/web/studio-dist/
+# web/studio-dist/ 是有意入库的：产物仅约 96 KB，可让 clone 后 /studio/ 开箱即用。
+# 改了 studio/ 源码后必须重跑 bash scripts/build-studio.sh 并把新产物一并提交。

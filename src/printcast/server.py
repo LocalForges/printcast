@@ -8,8 +8,9 @@
 3. 把 /__api/ 前缀交给 api.dispatch：内容包 CRUD、数据模板下载、CSV/JSON 导入、
    图片上传。这部分是真正的业务逻辑，由 printcast/api.py 等模块承担。
 
-鉴权策略：所有 /__ 与 /__api 端点只认 Host 为 127.0.0.1:当前端口 且
-Sec-Fetch-Site 为 same-origin 的请求，防止别的网站借本地服务读数据或拉进程。
+鉴权策略：所有 /__ 与 /__api 端点要求 Host 为回环地址
+（127.0.0.1 / localhost / ::1）+ 当前端口，且 Sec-Fetch-Site 若存在只能是
+same-origin/none；防止别的网站借本地服务读数据或拉进程。
 服务只监听 127.0.0.1，不对局域网开放。
 """
 import errno
@@ -132,6 +133,49 @@ def auto_start_broadcast(broadcast):
         return None
 
 
+# 全新 clone 后 web/studio-dist/ 不存在（构建产物不入库）。给一张可读的引导页，
+# 而不是让 /studio/ 落到裸 404 —— 后者曾被误报成「工作台连接受阻」。
+_STUDIO_NOT_BUILT_HTML = '''<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>printcast 工作台 · 尚未构建</title>
+<style>
+:root{color-scheme:light}*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+ font:14px/1.7 system-ui,-apple-system,"PingFang SC",sans-serif;background:#f5f7fb;color:#1b2436}
+.card{width:min(620px,calc(100vw - 40px));background:#fff;border:1px solid #e3e8f0;
+ border-radius:16px;padding:32px 36px;box-shadow:0 8px 30px rgba(20,40,80,.06)}
+.brand{display:flex;align-items:center;gap:10px;font-size:13px;color:#4f8cff;letter-spacing:.08em}
+h1{margin:18px 0 8px;font-size:22px;font-weight:600}
+p{margin:8px 0;color:#5a6678}code{font-family:ui-monospace,Menlo,monospace}
+pre{margin:18px 0;padding:14px 16px;background:#0f172a;color:#e6edf7;border-radius:10px;
+ font-size:13px;overflow:auto}
+.status{margin-top:20px;padding:12px 14px;border-radius:10px;font-size:13px;background:#eef4ff;color:#2b5bb5}
+.status.err{background:#fef2f2;color:#b91c1c}.status.ok{background:#ecfdf5;color:#047857}
+a{color:#4f8cff}small{color:#8792a4}
+@media(prefers-color-scheme:dark){:root{color-scheme:dark}body{background:#0e131c;color:#e6edf7}
+ .card{background:#161d29;border-color:#283344;box-shadow:none}h1{color:#fff}p,small{color:#9aa8bd}
+ .status{background:#17243c;color:#a9c6ff}.status.ok{background:#102a22;color:#8ee0bd}}
+</style></head><body><div class="card">
+<div class="brand">&#9639; PRINTCAST / STUDIO</div>
+<h1>工作台尚未构建</h1>
+<p><code>/studio/</code> 由 Vue + Vite 构建产物提供，产物不随 git 提交。全新克隆后需先构建一次。</p>
+<pre>cd 项目根目录
+bash scripts/build-studio.sh</pre>
+<p>构建会产出 <code>web/studio-dist/</code>（约 90 KB），完成后刷新本页即可。</p>
+<div class="status" id="api">正在检测后端连接…</div>
+<p><small>后端状态：<span id="apiDetail">—</span> · 展示主页不受影响，可先打开
+<a href="/web/index.html">/web/index.html</a>。</small></p>
+</div><script>
+fetch('/__api/settings').then(function(r){return r.json()}).then(function(d){
+ var el=document.getElementById('api');el.className='status ok';
+ el.textContent='后端已连通 · 控制台设置可读';document.getElementById('apiDetail').textContent='HTTP 200';
+}).catch(function(e){var el=document.getElementById('api');el.className='status err';
+ el.textContent='后端请求失败：'+e.message+'（请用 127.0.0.1 或 localhost 访问，并确认端口）';
+ document.getElementById('apiDetail').textContent='请求失败';});
+</script></body></html>'''
+
+
 def make_handler(active_port):
     """构造 Handler 类。active_port 决定 Host 校验口径，因此需要闭包传入。"""
     relay = SceneRelay()
@@ -153,10 +197,25 @@ def make_handler(active_port):
 
         # —— 公共工具 ——
         def _guard(self):
-            """只允许本机页面调用（防其它网站借用本地服务拉进程）。"""
-            if not str(self.headers.get('Host', '')).startswith('127.0.0.1:' + str(active_port)):
+            """只允许本机页面调用（防其它网站借用本地服务拉进程）。
+
+            双重校验：Host 必须是本机回环地址 + 当前端口；Sec-Fetch-Site 若存在
+            必须是 same-origin/none。后者缺失时仍放行——Safari 等浏览器不发该头，
+            而 Host 白名单已能挡住外部站点（跨站 fetch 会带 cross-site）。
+            历史上只认 127.0.0.1 且强制要求该头，用 localhost 或非 Chromium
+            浏览器打开工作台会整片 403，表现为「连接受阻 / 内容包消失」。
+            """
+            host = str(self.headers.get('Host', '')).strip()
+            if host.startswith('['):                       # [::1]:8080
+                host_only = host[1:].split(']', 1)[0]
+                port_part = host.split(']', 1)[-1].lstrip(':')
+            else:
+                host_only, _, port_part = host.partition(':')
+            if host_only.lower() not in ('127.0.0.1', 'localhost', '::1'):
                 return False
-            return self.headers.get('Sec-Fetch-Site', '') == 'same-origin'
+            if port_part and port_part != str(active_port):
+                return False
+            return self.headers.get('Sec-Fetch-Site', '') in ('', 'same-origin', 'none')
 
         def _json(self, code, body):
             data = body.encode('utf-8') if isinstance(body, str) else json.dumps(body).encode('utf-8')
@@ -165,6 +224,30 @@ def make_handler(active_port):
             self.send_header('Content-Length', str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+            # do_GET 的路由循环靠「返回值非 None」判断是否已处理。若这里返回 None，
+            # 响应发出后仍会掉进 super().do_GET() 的静态回退，再叠一个 404，
+            # 浏览器连接被污染并刷出 OSError 41。必须返回哨兵值。
+            return True
+
+        def _html(self, code, body):
+            data = body.encode('utf-8')
+            self.send_response(code)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers()
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+            return True
+
+        def send_error(self, code, message=None, explain=None):
+            # 浏览器在收到完整响应后会立刻关连接；此时再写 404 会抛
+            # OSError: [Errno 41]，把服务日志刷满。写失败就静默忽略。
+            try:
+                super().send_error(code, message, explain)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
 
         def _deny(self, body='{"error":"forbidden"}'):
             return self._json(403, body)
@@ -304,7 +387,8 @@ def make_handler(active_port):
             # 内容包 API 的 GET 端点（schema / 模板 / 列表）走同一通道。
             if self._is_api():
                 return self._api_call()
-            for route in (self._bridge_status, self._scene_events, self._open_live,
+            for route in (self._studio_fallback, self._bridge_status,
+                          self._scene_events, self._open_live,
                           self._start_bridge, self._stop_bridge, self._open_scene):
                 handled = route()
                 if handled is not None:
@@ -316,6 +400,13 @@ def make_handler(active_port):
             return super().do_GET()
 
         # —— 各端点：返回 None 表示"这不是我的路由" ——
+        def _studio_fallback(self):
+            if urlparse(self.path).path.rstrip('/') != '/studio':
+                return None
+            if (config.studio_dist_dir() / 'index.html').is_file():
+                return None
+            return self._html(200, _STUDIO_NOT_BUILT_HTML)
+
         def _bridge_status(self):
             if self.path != '/__bridge-status':
                 return None

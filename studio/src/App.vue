@@ -9,6 +9,32 @@ const media = ref([]);
 const message = ref('');
 const error = ref('');
 
+// 后端连接状态：把「连接受阻」变成可见、可自诊的信息，而不是一片空白。
+const connection = reactive({ ok: null, host: '', detail: '正在检测本机服务…' });
+
+async function checkConnection() {
+  connection.ok = null;
+  connection.host = location.host || '(未知)';
+  connection.detail = '正在检测本机服务…';
+  try {
+    const res = await fetch('/__api/settings');
+    if (!res.ok) {
+      const hint = res.status === 403
+        ? '本机鉴权拒绝：请用 127.0.0.1 或 localhost 打开，端口需与服务一致'
+        : res.status === 404
+          ? '未找到 /__api/settings：请确认运行的是新版 printcast 服务'
+          : '服务响应异常';
+      throw new Error('HTTP ' + res.status + ' · ' + hint);
+    }
+    await res.json();
+    connection.ok = true;
+    connection.detail = '后端已连通 · 控制台设置可读';
+  } catch (e) {
+    connection.ok = false;
+    connection.detail = e.message || '无法连接';
+  }
+}
+
 const fileInput = ref(null);
 const csvText = ref('');
 const csvFileName = ref('');
@@ -148,6 +174,7 @@ async function removeMedia(id) {
 }
 
 onMounted(async () => {
+  checkConnection();
   // 先取控制台设置，再读广播状态：广播表单的默认值来自设置，顺序不能颠倒。
   await Promise.all([loadMeta(), loadPacks(), loadMedia(), loadSettings()]);
   await bcLoad();
@@ -264,17 +291,34 @@ async function previewSchedule() {
 
 <template>
   <div class="studio">
-    <header>
-      <h1>printcast 数据工作台</h1>
-      <p class="muted">内容包 / 数据导入 / 图片上传 —— 全部在本机运行，不上传云端</p>
+    <header class="topbar">
+      <div class="topbar-main">
+        <div class="logo">&#9639;</div>
+        <div>
+          <h1>printcast <span>数据工作台</span></h1>
+          <p class="muted">内容包 / 数据导入 / 图片上传 / 控制台设置 —— 全部在本机运行，不上传云端</p>
+        </div>
+      </div>
+      <div class="conn" :class="connection.ok === true ? 'ok' : connection.ok === false ? 'err' : 'wait'">
+        <span class="conn-dot"></span>
+        <span class="conn-host">{{ connection.host }}</span>
+        <span class="conn-detail">{{ connection.detail }}</span>
+        <button class="small ghost" @click="checkConnection">重新检测</button>
+      </div>
+      <nav class="nav">
+        <a href="#s1">内容包</a><a href="#s2">模板</a><a href="#s3">导入</a>
+        <a href="#s4">图片</a><a href="#s5">出场预览</a>
+        <a href="#s6">控制台设置</a><a href="#s7">广播控制</a>
+      </nav>
     </header>
 
     <div v-if="message" class="banner ok">{{ message }}</div>
     <div v-if="error" class="banner err">{{ error }}</div>
 
-    <section class="card">
+    <section class="card" id="s1">
       <h2>1 · 内容包列表</h2>
-      <p v-if="!packs.length" class="muted">暂无内容包。导入数据后会自动生成。</p>
+      <p v-if="!packs.length && connection.ok === false" class="banner err">内容包读取失败：后端连不上。内置示例包仍在 data/packs/，并未被删除——请先修复上方的连接状态。</p>
+      <p v-else-if="!packs.length" class="muted">暂无内容包。导入数据后会自动生成。</p>
       <table v-else>
         <thead><tr><th>ID</th><th>标题</th><th>模式</th><th>人物数</th><th></th></tr></thead>
         <tbody>
@@ -287,14 +331,14 @@ async function previewSchedule() {
       </table>
     </section>
 
-    <section class="card">
+    <section class="card" id="s2">
       <h2>2 · 模板下载</h2>
       <p class="muted">按模板填写后导入，字段与系统一致。</p>
       <button @click="downloadTemplate('csv')">下载 CSV 模板</button>
       <button @click="downloadTemplate('json')">下载 JSON 模板</button>
     </section>
 
-    <section class="card">
+    <section class="card" id="s3">
       <h2>3 · 数据导入</h2>
       <div class="row">
         <label>内容包 ID<input v-model="packMeta.id" placeholder="如 ming-emperors" /></label>
@@ -329,7 +373,7 @@ async function previewSchedule() {
       </div>
     </section>
 
-    <section class="card">
+    <section class="card" id="s4">
       <h2>4 · 图片上传</h2>
       <div class="row">
         <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp" />
@@ -345,7 +389,7 @@ async function previewSchedule() {
       <p v-else class="muted">暂无上传图片。</p>
     </section>
 
-    <section class="card">
+    <section class="card" id="s5">
       <h2>5 · 出场顺序预览</h2>
       <p class="muted">按出场模式与组合策略生成「明朝皇帝 / 故事人物」的出场序列，可一键打开广播页实时推送。</p>
       <div class="row">
@@ -388,7 +432,7 @@ async function previewSchedule() {
       <p v-if="schedResult" class="muted">模式 {{ schedResult.mode }} · 策略 {{ schedResult.strategy }} · loop {{ schedResult.loop }}</p>
     </section>
 
-    <section class="card" v-if="settings">
+    <section class="card" id="s6" v-if="settings">
       <h2>6 · 控制台设置 <span class="muted">（唯一可写配置来源）</span></h2>
       <p class="muted">所有展示页（打印台 / 出场广播页 / 直播小窗）只读取这里的配置，不在前端写配置。修改后点「保存设置」，展示页刷新即生效。</p>
 
@@ -486,7 +530,7 @@ async function previewSchedule() {
       </div>
     </section>
 
-    <section class="card" v-if="settings">
+    <section class="card" id="s7" v-if="settings">
       <h2>7 · 出场广播控制</h2>
       <p class="muted">在此统一启动「讲到谁就打谁」的剧本播放；展示端的广播页与 3D 打印台实时同步。</p>
       <div class="row wrap">
@@ -532,39 +576,118 @@ async function previewSchedule() {
 </template>
 
 <style>
-:root { color-scheme: light dark; }
-body { margin: 0; font-family: system-ui, -apple-system, "PingFang SC", sans-serif; background: #f5f6f8; }
-.studio { max-width: 880px; margin: 0 auto; padding: 24px 16px 64px; }
-header h1 { margin: 0 0 4px; font-size: 22px; }
-.muted { color: #6b7280; font-size: 13px; }
-.card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 18px; margin: 14px 0; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
-.card h2 { margin: 0 0 12px; font-size: 16px; }
-.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
-label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-label.check { flex-direction: row; align-items: center; gap: 6px; }
-input, select, textarea { font: inherit; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 8px; }
-textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 12px; }
-button { font: inherit; padding: 7px 14px; border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 8px; cursor: pointer; }
-button:disabled { opacity: .6; cursor: default; }
-button.danger { background: #fff; color: #dc2626; border-color: #fca5a5; }
-button.small { padding: 2px 7px; }
+:root {
+  color-scheme: light dark;
+  --bg: #f3f6fb; --surface: #ffffff; --surface-2: #f7f9fc;
+  --border: #e2e8f0; --text: #172033; --muted: #64748b;
+  --accent: #3b6fd4; --accent-soft: #eaf1ff;
+  --ok: #0f8a58; --ok-soft: #e7f7ef;
+  --danger: #cf3535; --danger-soft: #fdf0f0;
+  --shadow: 0 1px 2px rgba(16,32,64,.04), 0 8px 24px rgba(16,32,64,.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d121b; --surface: #161d28; --surface-2: #1c2532;
+    --border: #283344; --text: #e6edf7; --muted: #93a2b8;
+    --accent: #6ea8ff; --accent-soft: #17263f;
+    --ok: #45c98a; --ok-soft: #10281d;
+    --danger: #f3796f; --danger-soft: #2c191a;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+.studio { max-width: 1120px; margin: 0 auto; padding: 28px 24px 80px; }
+
+.topbar { margin-bottom: 22px; }
+.topbar-main { display: flex; align-items: center; gap: 14px; }
+.logo { width: 42px; height: 42px; flex: 0 0 42px; border-radius: 12px;
+  display: grid; place-items: center; font-size: 20px; background: var(--accent); color: #fff; }
+h1 { margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -.01em; }
+h1 span { font-weight: 400; color: var(--muted); font-size: 16px; margin-left: 4px; }
+.muted { color: var(--muted); font-size: 13px; }
+.topbar-main p { margin: 2px 0 0; }
+
+.conn { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 18px 0 0; padding: 10px 14px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface); font-size: 13px; }
+.conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: 0 0 8px; }
+.conn.ok .conn-dot { background: var(--ok); }
+.conn.err .conn-dot { background: var(--danger); }
+.conn.wait .conn-dot { background: var(--accent); }
+.conn.ok { background: var(--ok-soft); }
+.conn.err { background: var(--danger-soft); }
+.conn-host { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; }
+.conn-detail { color: var(--muted); flex: 1 1 240px; }
+.conn.err .conn-detail { color: var(--danger); }
+
+.nav { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.nav a { padding: 5px 11px; border-radius: 999px; font-size: 12.5px; text-decoration: none;
+  color: var(--muted); background: var(--surface); border: 1px solid var(--border); }
+.nav a:hover { color: var(--accent); border-color: var(--accent); }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  padding: 20px 22px; margin: 16px 0; box-shadow: var(--shadow); scroll-margin-top: 16px; }
+.card h2 { margin: 0 0 14px; padding: 0 0 12px; font-size: 15px; font-weight: 600;
+  border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 8px; }
+.card h2 .muted { font-weight: 400; font-size: 12px; }
+.card h3.sub { margin: 22px 0 10px; font-size: 13px; font-weight: 600;
+  color: var(--accent); border-left: 3px solid var(--accent); padding-left: 9px; }
+
+.row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin: 10px 0; }
+label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px;
+  color: var(--muted); flex: 1 1 190px; min-width: 0; }
+label.check { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 7px;
+  color: var(--text); cursor: pointer; }
+input, select, textarea { width: 100%; font: inherit; font-size: 13px; padding: 8px 10px;
+  color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 8px; outline: none; }
+input:focus, select:focus, textarea:focus { border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft); }
+input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); }
+input[type="file"] { padding: 7px; }
+textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; resize: vertical; }
+
+button { font: inherit; font-size: 13px; padding: 8px 15px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--accent); background: var(--accent); color: #fff; }
+button:hover:not(:disabled) { filter: brightness(1.08); }
+button:active:not(:disabled) { transform: translateY(1px); }
+button:disabled { opacity: .5; cursor: default; }
+button.danger { background: transparent; color: var(--danger); border-color: var(--danger); }
+button.ghost { background: transparent; color: var(--muted); border-color: var(--border); }
+button.small { padding: 4px 10px; font-size: 12px; }
+
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
-.banner { padding: 9px 12px; border-radius: 8px; margin: 10px 0; font-size: 13px; }
-.banner.ok { background: #ecfdf5; color: #047857; }
-.banner.err { background: #fef2f2; color: #b91c1c; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); }
+th { font-size: 11.5px; letter-spacing: .06em; color: var(--muted); background: var(--surface-2); }
+tbody tr:hover { background: var(--surface-2); }
+td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+.banner { padding: 10px 14px; border-radius: 10px; margin: 10px 0; font-size: 13px;
+  border: 1px solid transparent; }
+.banner.ok { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); }
+.banner.err { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
 .result { margin-top: 10px; font-size: 13px; }
-.result ul { margin: 6px 0; padding-left: 18px; color: #b91c1c; }
-.result .ok { color: #047857; } .result .err { color: #b91c1c; }
+.result ul { margin: 6px 0; padding-left: 18px; color: var(--danger); }
+.result .ok { color: var(--ok); } .result .err { color: var(--danger); }
+
 .media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; margin-top: 10px; }
 figure { margin: 0; text-align: center; font-size: 11px; }
-figure img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb; }
+figure img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
 figcaption { display: flex; justify-content: space-between; align-items: center; gap: 4px; margin-top: 3px; }
 .row.wrap { align-items: flex-start; }
-.seq { margin: 12px 0 4px; padding-left: 22px; max-height: 320px; overflow: auto; font-size: 14px; }
+.seq { margin: 12px 0 4px; padding-left: 22px; max-height: 320px; overflow: auto; font-size: 13px; }
 .seq li { margin: 4px 0; }
-a.link { color: #2563eb; font-size: 13px; text-decoration: none; align-self: center; }
+a.link { color: var(--accent); font-size: 13px; text-decoration: none; align-self: center; }
 a.link:hover { text-decoration: underline; }
-.sub { margin: 18px 0 10px; font-size: 14px; color: #374151; border-left: 3px solid #2563eb; padding-left: 8px; }
-.checks { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 8px 0; }
+.checks { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 8px 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+@media (max-width: 640px) {
+  .studio { padding: 18px 14px 60px; }
+  .card { padding: 16px 14px; }
+  .conn-detail { flex-basis: 100%; }
+}
 </style>

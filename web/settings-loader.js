@@ -23,6 +23,18 @@
         if (el.type !== 'checkbox' && el.type !== 'radio') el.value = val;
       } else if (htmlKey) {
         el.innerHTML = val;
+      } else if (el.querySelector && el.querySelector('[data-links]')) {
+        // 容器里还嵌着链接宿主（如 <footer>）时，只替换文本节点。
+        // 直接 el.textContent = val 会把 [data-links] 整块删掉，控制台配的链接就永远不渲染。
+        var texts = [], n;
+        for (n = 0; n < el.childNodes.length; n++) {
+          if (el.childNodes[n].nodeType === 3) texts.push(el.childNodes[n]);
+        }
+        if (texts.length) {
+          for (n = 0; n < texts.length; n++) texts[n].nodeValue = n === 0 ? String(val) : '';
+        } else {
+          el.insertBefore(document.createTextNode(String(val)), el.firstChild);
+        }
       } else {
         el.textContent = val;
       }

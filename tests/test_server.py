@@ -36,11 +36,19 @@ class ServerTests(unittest.TestCase):
     def url(self, path):
         return f'http://127.0.0.1:{self.port}{path}'
 
-    def get(self, path, same_origin=True):
+    def get(self, path, same_origin=True, host=None, sec_fetch_site=None):
         req = urllib.request.Request(self.url(path))
         if same_origin:
             req.add_header('Sec-Fetch-Site', 'same-origin')
             req.add_header('Host', f'127.0.0.1:{self.port}')
+        else:
+            # 真实跨站请求一定带 cross-site；过去用「不带该头」模拟跨站是错的，
+            # Safari 等本来就不发这个头，不能据此判为外部站点。
+            req.add_header('Sec-Fetch-Site', 'cross-site')
+        if host is not None:
+            req.add_header('Host', host)
+        if sec_fetch_site is not None:
+            req.add_header('Sec-Fetch-Site', sec_fetch_site)
         return _OPENER.open(req, timeout=3)
 
     # —— 静态文件 ——
@@ -73,6 +81,58 @@ class ServerTests(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             self.get('/__bridge-status', same_origin=False)
         self.assertEqual(ctx.exception.code, 403)
+
+    def test_localhost_and_missing_fetch_site_are_allowed(self):
+        # 用 localhost 打开工作台曾导致所有 /__api/* 403：内容包读不到、连接受阻。
+        with self.get('/__api/packs', host=f'localhost:{self.port}') as response:
+            self.assertEqual(response.status, 200)
+            response.read()
+        # Safari 等不发送 Sec-Fetch-Site；Host 白名单已足以挡外部站点。
+        req = urllib.request.Request(self.url('/__api/packs'))
+        req.add_header('Host', f'127.0.0.1:{self.port}')
+        with _OPENER.open(req, timeout=3) as response:
+            self.assertEqual(response.status, 200)
+            response.read()
+
+    def test_external_host_is_still_denied(self):
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.get('/__api/packs', host='evil.example.com:8080')
+        self.assertEqual(ctx.exception.code, 403)
+
+    def test_scene_events_emits_exactly_one_response(self):
+        # _json 曾返回 None，导致 do_GET 路由循环继续走静态回退：
+        # 先发 200 JSON、再叠一个 404，浏览器连接被污染并刷 OSError 41。
+        conn = socket.create_connection(('127.0.0.1', self.port), timeout=3)
+        req = ('GET /__scene-events?client=probe HTTP/1.0\r\n'
+               f'Host: 127.0.0.1:{self.port}\r\n'
+               'Sec-Fetch-Site: same-origin\r\n\r\n')
+        conn.sendall(req.encode('ascii'))
+        conn.shutdown(socket.SHUT_WR)
+        chunks = []
+        while True:
+            chunk = conn.recv(4096)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        conn.close()
+        raw = b''.join(chunks)
+        self.assertEqual(raw.count(b'HTTP/1.0 200'), 1, raw[:200])
+        self.assertNotIn(b'HTTP/1.0 404', raw)
+        self.assertNotIn(b'File not found', raw)
+        data = json.loads(raw.split(b'\r\n\r\n', 1)[1])
+        self.assertIn('cursor', data)
+
+    def test_studio_shows_build_guide_when_dist_missing(self):
+        from unittest import mock
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch('printcast.server.config.studio_dist_dir',
+                            return_value=Path(td)):
+                with self.get('/studio/') as response:
+                    body = response.read()
+                    self.assertEqual(response.status, 200)
+        self.assertIn('工作台尚未构建'.encode('utf-8'), body)
+        self.assertIn(b'build-studio.sh', body)
 
     def test_bridge_status_shape(self):
         with self.get('/__bridge-status') as response:
@@ -160,6 +220,13 @@ class ServerTests(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             _OPENER.open(bad, timeout=3)
         self.assertEqual(ctx.exception.code, 400)
+        # 测试不该污染工作区：data/media 是运行时用户数据，用完即删。
+        cleanup = urllib.request.Request(
+            self.url('/__api/media/' + media['id']), method='DELETE',
+            headers={'Sec-Fetch-Site': 'same-origin',
+                     'Host': f'127.0.0.1:{self.port}'})
+        with _OPENER.open(cleanup, timeout=3) as response:
+            response.read()
 
 
 class EnsureServerTests(unittest.TestCase):

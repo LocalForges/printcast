@@ -7,7 +7,7 @@
 一个在浏览器里跑的三维打印直播台：观众的评论、点赞、礼物会触发一场逐层挤出的 3D 打印动画，成品自动出分、转运、上架；也支持按「内容包」顺序播放指定人物（如明朝十六帝、故事人物出场表），讲到谁就打谁。
 
 - **完全开源免费（MIT）**，无任何付费或授权限制，可自由下载、使用、修改、分发。
-- **零 npm 依赖**：采集层、传输层、渲染层全部手写，Three.js 已 vendored 在 `assets/`，可完全离线运行。
+- **零 npm 依赖**：采集层、传输层、渲染层全部手写，Three.js 已 vendored 在 `assets/`，**核心几何渲染完全离线可跑**；3D 场景贴图与音效需按需拉取（见快速开始第 1 步），缺失时降级为无贴图/静音。工作台 `/studio/` 的产物已入库，clone 即用。
 - **中英双语**：`web/index.html` / `web/index-en.html` 独立文件、独立语音包，互不影响。
 
 ---
@@ -17,7 +17,8 @@
 项目已按正式 Python 结构组织（虚拟环境 + `pyproject.toml` + 可安装包 + 命令行入口）。
 
 ```bash
-# 1) 还原大体积二进制资源（音频/贴图/截图，约 33MB，未随 git 提交）
+# 1) 可选：还原 3D 场景贴图与音效（约 33MB，未随 git 提交）
+#    跳过也能启动服务与工作台，只是背景贴图/音效缺失；不需要 npm 或外网也能跑核心渲染。
 bash scripts/vendor-assets.sh
 
 # 2) 一键启动（macOS / Linux）：脚本自动建 .venv、editable install、开浏览器
@@ -220,7 +221,7 @@ cd studio && npm install && npm run dev
 bash scripts/build-studio.sh
 ```
 
-> `web/studio-dist/` 是构建产物、不入库，首次拉取后跑一次 `bash scripts/build-studio.sh` 即可；改了 `studio/` 源码后再跑一次。主渲染页与 Python 侧无需此步。
+> `web/studio-dist/` 的**构建产物已随仓库入库**（约 96 KB），因此全新 clone 后 `/studio/` 开箱即用，无需先装 Node 依赖。改了 `studio/` 源码后要重跑 `bash scripts/build-studio.sh`，并把新产物一并提交；否则线上仍是旧界面。若产物被误删，服务会显示带构建指引的引导页而不是裸 404。主渲染页与 Python 侧始终无需此步。
 
 > 数据默认存在仓库根的 `data/`（用户内容包与上传图片不入库；示例包可提交）。
 > 想改字段（如新增「朝代」「朝代起止」）？只改 `src/printcast/schema.py` 一处，CSV 模板、导入校验、前端表单会自动同步。
