@@ -9,7 +9,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from . import config, importer, schema, storage, templates
+from . import audit, config, importer, schema, storage, templates
 from . import settings as settings_module
 from .scheduler import ContentScheduler
 
@@ -110,6 +110,21 @@ def dispatch(method, path, query=None, headers=None, body=b''):
             return _ok({'ok': True, 'settings': settings_module.save_settings(body)})
         return _bad('不支持的方法', 405)
 
+    # —— 本机操作日志（控制台专属，展示端不调用）——
+    # GET 只读；DELETE 清空。写操作日志由 server 层统一埋点，保证所有入口
+    # （内容包 / 设置 / 媒体 / 广播 / 数据桥 / 窗口）都覆盖到，而非靠前端上报。
+    if path.startswith('/__api/audit'):
+        if method == 'GET':
+            limit = _query_first(query, 'limit', '100')
+            action = _query_first(query, 'action', '')
+            q = _query_first(query, 'q', '')
+            return _ok({'ok': True,
+                        'entries': audit.list_entries(limit, action, q),
+                        'stats': audit.stats()})
+        if method == 'DELETE':
+            return _ok({'ok': True, 'cleared': audit.clear()})
+        return _bad('不支持的方法', 405)
+
     if path.startswith('/__api/packs'):
         pack_id = parts[2] if len(parts) > 2 else ''
         if method == 'GET' and not pack_id:
@@ -188,6 +203,9 @@ def dispatch(method, path, query=None, headers=None, body=b''):
         seed = int(seed_raw) if seed_raw.isdigit() else (seed_raw or None)
         count_raw = _query_first(query, 'count', '')
         count = int(count_raw) if count_raw.isdigit() else None
+        # 预演序列要渲染成时间轴卡片， exceeding 一个合理上限会拖垮页面与后端。
+        if count is not None:
+            count = max(1, min(count, 300))
         loop_raw = _query_first(query, 'loop', '')
         loop = _truthy(loop_raw) if loop_raw else None
         packs, missing = [], []
@@ -215,6 +233,10 @@ def dispatch(method, path, query=None, headers=None, body=b''):
             'strategy': strategy,
             'mode': sched.mode,
             'loop': sched.loop,
+            # 回显 seed / count 让「固定 seed 复现」可被复制、比对与回放，
+            # 而不是只有前端自己记得刚才填了什么。
+            'seed': seed,
+            'count': count,
             'appearances': sched.plan(count),
             'progress': sched.progress(),
         })

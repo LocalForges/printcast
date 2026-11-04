@@ -245,6 +245,65 @@ class ServerTests(unittest.TestCase):
         with _OPENER.open(cleanup, timeout=3) as response:
             response.read()
 
+    # —— P1：本机操作日志（端到端）——
+    def test_audit_records_writes_and_clear_keeps_audit_trail(self):
+        import tempfile
+        from unittest import mock
+        from printcast import config
+
+        def request(method, path, payload=None):
+            data = json.dumps(payload).encode('utf-8') if payload is not None else None
+            req = urllib.request.Request(
+                self.url(path), data=data, method=method,
+                headers={'Content-Type': 'application/json',
+                         'Sec-Fetch-Site': 'same-origin',
+                         'Host': f'127.0.0.1:{self.port}'})
+            return _OPENER.open(req, timeout=3)
+
+        # 日志写到临时目录，避免污染仓库本机数据；服务端与 api 层共享 config 模块。
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(config, 'DATA_DIR', Path(tmp)):
+                with request('DELETE', '/__api/packs/ghost-pack') as response:
+                    response.read()
+                with self.get('/__api/audit?action=pack.delete') as response:
+                    data = json.load(response)
+                self.assertTrue(data['ok'])
+                self.assertEqual(len(data['entries']), 1)
+                self.assertEqual(data['entries'][0]['action'], 'pack.delete')
+                self.assertEqual(data['entries'][0]['target'], 'ghost-pack')
+                self.assertTrue(data['entries'][0]['ok'])
+                self.assertEqual(data['stats']['total'], 1)
+
+                # 失败动作也要留痕（未知广播动作 → 400）。
+                with self.assertRaises(urllib.error.HTTPError) as ctx:
+                    request('POST', '/__api/broadcast',
+                            {'action': 'definitely-unknown'}).read()
+                self.assertEqual(ctx.exception.code, 400)
+                with self.get('/__api/audit?action=broadcast.definitely-unknown') as response:
+                    failed = json.load(response)
+                self.assertEqual(len(failed['entries']), 1)
+                self.assertFalse(failed['entries'][0]['ok'])
+                self.assertEqual(failed['stats']['failed'], 1)
+
+                # 清空后仍留一条「谁清过日志」，可回溯性不因清空而断。
+                with request('DELETE', '/__api/audit') as response:
+                    cleared = json.load(response)
+                self.assertTrue(cleared['cleared'])
+                with self.get('/__api/audit') as response:
+                    after = json.load(response)
+                self.assertEqual(after['stats']['total'], 1)
+                self.assertEqual(after['entries'][0]['action'], 'audit.clear')
+
+    def test_audit_get_is_read_only_and_requires_auth(self):
+        with self.get('/__api/audit') as response:
+            data = json.load(response)
+        self.assertTrue(data['ok'])
+        self.assertIn('entries', data)
+        self.assertIn('stats', data)
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.get('/__api/audit', same_origin=False)
+        self.assertEqual(ctx.exception.code, 403)
+
 
 class EnsureServerTests(unittest.TestCase):
     def test_reuses_existing_printcast_instance(self):

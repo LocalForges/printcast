@@ -12,8 +12,11 @@
 desktop-bridge.log
 avatar-cache.json
 ws-samples/
-# 控制台设置由 /__api/settings 在运行期落盘，属于本机用户配置
+# 控制台设置与本机操作日志由后端在运行期落盘，属于本机用户数据
 data/settings.json
+data/audit.jsonl
+data/audit.jsonl.tmp-*
+data/*.tmp-*
 .output-test/
 
 # 虚拟环境（用户本地创建，绝不入库）
@@ -25,6 +28,7 @@ env/
 __pycache__/
 *.pyc
 .pytest_cache/
+tests-tmp/
 
 # 打包 / editable install 产物
 build/

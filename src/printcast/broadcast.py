@@ -26,6 +26,7 @@ class BroadcastController:
         self.scheduler: Optional[ContentScheduler] = None
         self.pack_ids: List[str] = []
         self.strategy = 'concat'
+        self.seed = None
         self.current = None
         self.seq = 0
         self.started_at = None
@@ -49,6 +50,9 @@ class BroadcastController:
             self.scheduler.loop = bool(loop)
         self.pack_ids = list(pack_ids)
         self.strategy = strategy
+        # 固定 seed 是「序列可复现」的凭据：工作台把预演参数原样带回 start，
+        # state() 回显 seed，才能核对刚才预演的确实是这一轮真实广播。
+        self.seed = seed
         self.current = None
         self.seq = 0
         self.started_at = time.time()
@@ -102,6 +106,7 @@ class BroadcastController:
             'startedAt': self.started_at,
             'packIds': self.pack_ids,
             'strategy': self.strategy,
+            'seed': self.seed,
             'mode': self.scheduler.mode,
             'loop': self.scheduler.loop,
             'seq': self.seq,

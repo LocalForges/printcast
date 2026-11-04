@@ -30,7 +30,7 @@ from .config import (
     HTTP_PORT, HTTP_PORT_FALLBACKS, IS_MAC, LIVE_DEBUG_PORT, PROFILE_DIRS, ROOT,
     find_browser,
 )
-from . import api, config, settings as settings_module, storage
+from . import api, audit, config, settings as settings_module, storage
 from .broadcast import BroadcastController, BroadcastError
 from .probe import bridge_status, listening, local_get, wait_bridge
 from .relay import SceneRelay
@@ -45,6 +45,42 @@ SCENE_SIZES = {
 
 ROOM_RE = re.compile(r'\d{5,25}')
 SCENE_PATH_RE = re.compile(r'/[A-Za-z0-9_\-]+/[A-Za-z0-9_\-]+\.html\?scene=1')
+
+# —— 本机操作日志埋点 ——
+# 只记录「控制台发起、服务端实际执行」的写动作。展示端信令（/__scene-message）
+# 是高频只读订阅链路的发布端，不属于配置/资产写操作，故不记录，避免日志被刷爆。
+_AUDIT_ACTIONS = {
+    ('settings', 'PUT'): 'settings.update',
+    ('settings', 'POST'): 'settings.update',
+    ('settings', 'DELETE'): 'settings.reset',
+    ('packs', 'POST'): 'pack.save',
+    ('packs', 'PUT'): 'pack.save',
+    ('packs', 'DELETE'): 'pack.delete',
+    ('import', 'POST'): 'pack.import',
+    ('media', 'POST'): 'media.upload',
+    ('media', 'DELETE'): 'media.delete',
+    ('audit', 'DELETE'): 'audit.clear',
+}
+
+
+def audit_write(action, target='', ok=True, detail='', status=200):
+    """日志写入绝不能拖垮业务请求；失败静默跳过。"""
+    try:
+        return audit.record(action, target, ok, detail, status)
+    except Exception:
+        return None
+
+
+def audit_api_call(method, path, status):
+    """在统一 API 通道里，按资源 + 方法给写操作打一条日志。"""
+    parts = [p for p in path.split('?', 1)[0].split('/') if p]
+    resource = parts[1] if len(parts) > 1 else ''
+    target = parts[2] if len(parts) > 2 else ''
+    action = _AUDIT_ACTIONS.get((resource, method)) or \
+        (resource or 'api') + '.' + method.lower()
+    ok = 200 <= status < 400
+    detail = 'HTTP %d · %s' % (status, '成功' if ok else '失败')
+    audit_write(action, target or resource, ok, detail, status)
 
 
 def room_id(raw):
@@ -294,7 +330,13 @@ def make_handler(active_port):
             response = api.dispatch(self.command, parsed.path,
                                     parse_qs(parsed.query), headers, body)
             if response is None:
+                if self.command in ('POST', 'PUT', 'DELETE'):
+                    audit_api_call(self.command, parsed.path, 404)
                 return self._json(404, {'ok': False, 'error': '未知的 API 路径'})
+            # 先执行、后记录：清空日志（DELETE /__api/audit）会留下一条
+            # 「audit.clear」记录，谁在什么时间清过日志仍可回溯。
+            if self.command in ('POST', 'PUT', 'DELETE'):
+                audit_api_call(self.command, parsed.path, response.status)
             self.send_response(response.status)
             self.send_header('Content-Type', response.content_type)
             self.send_header('Content-Length', str(len(response.body)))
@@ -334,6 +376,10 @@ def make_handler(active_port):
             if not isinstance(body, dict):
                 body = {}
             action = (body.get('action') or sub or 'next')
+            audit_target = (body.get('charId') or body.get('char_id')
+                            or ','.join(str(x) for x in (body.get('packs')
+                                        or body.get('packIds') or []))
+                            or '')
             try:
                 if action == 'start':
                     result = broadcast.start(
@@ -351,10 +397,16 @@ def make_handler(active_port):
                 elif action == 'plan':
                     result = broadcast.plan(body.get('count'))
                 else:
+                    audit_write('broadcast.' + str(action), audit_target,
+                                False, '未知的广播动作', 400)
                     return self._json(400, {'ok': False,
                                             'error': '未知的广播动作：%s' % action})
             except BroadcastError as exc:
+                audit_write('broadcast.' + str(action), audit_target,
+                            False, str(exc), 400)
                 return self._json(400, {'ok': False, 'error': str(exc)})
+            audit_write('broadcast.' + str(action), audit_target,
+                        True, 'HTTP 200 · 成功', 200)
             return self._json(200, {'ok': True, 'broadcast': result})
 
         # —— 控制台总览：把散落在后端的运行时状态聚合成一次 GET ——
@@ -488,7 +540,9 @@ def make_handler(active_port):
                          '--disable-background-timer-throttling',
                          '--disable-features=IntensiveWakeUpThrottling,CalculateNativeWinOcclusion']
             if not open_app_window('https://live.douyin.com/' + room, size, extra):
+                audit_write('live.open', room, False, 'no browser found', 500)
                 return self._json(500, {'ok': False, 'error': 'no browser found'})
+            audit_write('live.open', room, True, '打开直播小窗', 200)
             return self._json(200, {'ok': True})
 
         def _start_bridge(self):
@@ -506,6 +560,9 @@ def make_handler(active_port):
             if not room:
                 return self._json(400, {'ok': False, 'error': 'no room'})
             result = bridge.start(room, LIVE_DEBUG_PORT if listening(LIVE_DEBUG_PORT) else None)
+            audit_write('bridge.start', room, bool(result.get('ok')),
+                        result.get('error') or '启动数据桥',
+                        200 if result.get('ok') else 500)
             return self._json(200 if result.get('ok') else 500, result)
 
         def _stop_bridge(self):
@@ -514,6 +571,7 @@ def make_handler(active_port):
             if not self._guard():
                 return self._json(403, {'ok': False, 'error': 'forbidden'})
             bridge.stop()
+            audit_write('bridge.stop', '', True, '停止数据桥', 200)
             return self._json(200, {'ok': True})
 
         def _open_scene(self):
@@ -532,11 +590,14 @@ def make_handler(active_port):
             if IS_MAC:
                 exe = find_browser()
                 if not exe:
+                    audit_write('scene.open', spath, False, 'no browser found', 500)
                     return self._json(500, {'ok': False, 'error': 'no browser found'})
                 subprocess.Popen(['open', '-na', exe, '--args', '--app=' + scene_url, '--window-size=' + size])
             else:
                 if not open_app_window(scene_url, (w, h)):
+                    audit_write('scene.open', spath, False, 'no browser found', 500)
                     return self._json(500, {'ok': False, 'error': 'no browser found'})
+            audit_write('scene.open', spath, True, orient, 200)
             return self._json(200, {'ok': True})
 
         def log_message(self, *args):

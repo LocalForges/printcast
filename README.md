@@ -165,7 +165,9 @@ printcast/
   | `broadcast.autoStart` | `server.auto_start_broadcast()`：服务启动即按默认参数开播，配置异常静默跳过 |
   | `broadcast.speech` / `scriptedPrint` | M1 出场打印的门控 |
   | `live.defaultRoom` / `platform` | 展示端回填房间号输入框与占位文案 |
-- **鉴权**：所有 `/__api/*` 与 `/__` 本机端点仅接受 Host 为 `127.0.0.1:<port>` 且 `Sec-Fetch-Site: same-origin` 的请求，防止外部站点借本地服务读写数据或拉起进程；`/__health` 除外（仅供存活探测）。
+- **鉴权**：所有 `/__api/*` 与 `/__` 本机端点要求 Host 为 `127.0.0.1` / `localhost` / `::1` 加当前端口，且 `Sec-Fetch-Site` 若存在只能是 `same-origin` / `none`（缺失时放行，Safari 不发该头），防止外部站点借本地服务读写数据或拉起进程；`/__health` 除外（仅供存活探测）。
+- **操作日志由服务端统一埋点**（P1）：`src/printcast/audit.py` 记录所有本机写操作（设置、内容包、图片、广播、数据桥、窗口控制），失败动作同样留痕；前端只读取 `GET /__api/audit`，**不靠浏览器上报**。展示端高频信令不记录。日志落在本机 `data/audit.jsonl`（JSON Lines，500 条上限、字段截断、不记请求体），清空时保留一条 `audit.clear` 记录以维持可回溯性。
+- **设置页 iframe 预览不破坏边界**（P1）：预览加载的是真实展示页（自己 `GET /__api/settings`），控制台**不向 iframe 注入草稿配置**；只有已保存的设置会呈现，保存成功后自动刷新 iframe。可切换目标页与缩放比例，也可暂停预览省渲染资源。
 - **静态页面全面参数化**：原先内嵌在 HTML 里的品牌名、广告条、联系方式、强调色已全部移除；`site/` 宣传页亦清除第三方署名与水印，仅保留 printcast 自有品牌。旧版硬编码广告条由控制台的 `display.showAnnounce` + `announceText` + `branding.links` 取代（默认关闭，无任何硬编码内容）。
 - **回归护栏**：`tests/settings-loader.test.mjs` 用最小 DOM 桩在 Node 里跑真实装载器，锁死「只 GET / 取 settings 本体 / 展示端不写配置」；`tests/test_settings.py` 覆盖布尔与数值收口、危险协议拒绝、未知分区剔除与 autoStart。
 
@@ -203,15 +205,18 @@ printcast/
 
 除了「实时直播驱动」，printcast 还支持**预先编排内容**——这正是「按内容包顺序播放指定人物（明朝十六帝、故事人物出场表）」的实现载体。打开 `http://127.0.0.1:8080/studio/`（服务启动后自动可用）即可使用，全程本机运行、不上传云端。
 
-工作台采用「左侧导航 + 主工作区」的**中控台**布局，默认打开 **总览**：当前正在打印的角色、本机服务 / 数据桥 / 出场广播三灯状态、内容包与已出场计数，以及订阅 `/__scene-events` 的实时事件流。高频操作（开始广播 / 下一个 / 重置进度 / 拉起打印台与直播小窗 / 启停数据桥）都在一屏内完成，不用滚动、不用刷新。工作台自身的深浅主题存于 `localStorage`，与展示端 `display.theme` 互不影响。
+工作台采用「左侧导航 + 主工作区」的**中控台**布局，默认打开 **总览**：当前正在打印的角色、本机服务 / 数据桥 / 出场广播三灯状态、内容包与已出场计数，以及订阅 `/__scene-events` 的实时事件流。高频操作（开始广播 / 下一个 / 重置进度 / 拉起打印台与直播小窗 / 启停数据桥）都在一屏内完成，不用滚动、不用刷新。侧栏按「运行 / 资产 / 编排 / 配置」分组共 9 个视图（总览、出场广播、内容包、数据导入、图片资源、排期预演、控制台设置、系统、操作日志）。工作台自身的深浅主题存于 `localStorage`，与展示端 `display.theme` 互不影响。
 
 | 功能 | 说明 |
 |---|---|
 | 总览中控台 | 2 秒轮询 `GET /__api/status` + 事件流长轮询；显示当前出场角色、链路状态、实时事件与快捷干预 |
-| 内容包管理 | 列出 / 删除内容包；一个内容包 = 一组有序人物（如 16 位皇帝），由规则层按 `mode` 调度 |
+| 内容包管理 | 搜索 / 排序；点标题打开**抽屉**查看人物表（头像、台词、权重、标签），可编辑保存、上下调序、增删人物、复制成新包、导出 JSON、导入 JSON；一个内容包 = 一组有序人物，由规则层按 `mode` 调度 |
 | 模板下载 | 下载 CSV / JSON 模板，字段与系统完全一致，Excel 双击不乱码（带 BOM） |
 | 数据导入 | 粘贴或上传 CSV，逐行校验、**绝不静默丢行**；错误会标注到具体行，一次改完再提交 |
-| 图片上传 | 头像图片直接上传（PNG/JPEG/WebP，魔数+扩展名+大小三重校验），供内容包引用 |
+| 图片上传 | 头像图片直接上传（PNG/JPEG/WebP，魔数+扩展名+大小三重校验），供内容包抽屉的人物头像下拉选用 |
+| 排期预演 | 出场序列渲染成**时间轴卡片带**：固定 `seed` 复现、可复制复现链接、逐位本地预演、一键按预演参数开播（广播 `state.seed` 可核对） |
+| 操作日志 | 9 个视图之一：按动作 / 关键词 / 失败筛选本机写操作，含成功失败统计与清空（保留清空记录） |
+| 设置预览 | 右侧嵌真实展示页缩放 iframe，保存设置后自动刷新；可选择广播页 / 打印台 / 直播小窗 |
 
 **为什么引入构建链**：工作台是唯一用上框架的页面——表格、表单校验、上传进度、错误列表正好是声明式 UI 的强项。它走独立的 **Vue 3 + Vite** 工程（`studio/`），产物落在 `web/studio-dist/`，由主服务以 `/studio/` 前缀托管；**主渲染页（`web/index.html`，111KB 原生 ES modules）不进构建链**，保持「核心零 npm 依赖、离线可跑」。
 
@@ -224,7 +229,7 @@ cd studio && npm install && npm run dev
 bash scripts/build-studio.sh
 ```
 
-> `web/studio-dist/` 的**构建产物已随仓库入库**（约 96 KB），因此全新 clone 后 `/studio/` 开箱即用，无需先装 Node 依赖。改了 `studio/` 源码后要重跑 `bash scripts/build-studio.sh`，并把新产物一并提交；否则线上仍是旧界面。若产物被误删，服务会显示带构建指引的引导页而不是裸 404。主渲染页与 Python 侧始终无需此步。
+> `web/studio-dist/` 的**构建产物已随仓库入库**（约 150 KB），因此全新 clone 后 `/studio/` 开箱即用，无需先装 Node 依赖。改了 `studio/` 源码后要重跑 `bash scripts/build-studio.sh`，并把新产物一并提交；否则线上仍是旧界面。若产物被误删，服务会显示带构建指引的引导页而不是裸 404。主渲染页与 Python 侧始终无需此步。
 
 > 数据默认存在仓库根的 `data/`（用户内容包与上传图片不入库；示例包可提交）。
 > 想改字段（如新增「朝代」「朝代起止」）？只改 `src/printcast/schema.py` 一处，CSV 模板、导入校验、前端表单会自动同步。
@@ -256,20 +261,22 @@ bash scripts/build-studio.sh
   python -m printcast --schedule xiyouji --mode trigger        # 西游记按事件触发
   ```
 
-- **工作台预览**：`/studio/` 新增「出场顺序预览」区块，选内容包 + 模式 + 策略，实时拉 `GET /__api/schedule` 查看计划列表。
+- **工作台排期预演**：`/studio/` 的「排期预演」选内容包 + 策略 + 模式 + 数量 + **固定 seed** + 循环，拉 `GET /__api/schedule` 渲染成可点击的时间轴卡片带；「复制复现链接」得到完整参数 URL，「本地预演」在工作台内逐位高亮（**不触发真实广播 / 打印**），「按此配置开播」把同一 seed 交给广播控制器，`state.seed` 可核对。纯数字 seed 在前端统一收口成 number，避免 `Random('123')` 与 `Random(123)` 产生不同序列。
 
-- **实时出场卡片**：打开 `/broadcast.html` 充当「当前出场」显示面板，经 `SceneRelay` 的 `view-appearance` 消息实时刷新（角色名 / 头像 / 播报）；底部控制条可「开始 / 下一个 / 触发事件 / 重置」，支持循环。
+- **实时出场卡片**：打开 `/web/broadcast.html` 充当「当前出场」**只读**显示面板，经 `SceneRelay` 的 `view-appearance` 消息实时刷新（角色名 / 头像 / 播报）；开始 / 下一个 / 点名 / 重置全部在 `/studio` 的广播控制区操作。
 
 - **HTTP 端点**：
 
   | 端点 | 说明 |
   |---|---|
-  | `GET /__api/schedule?pack=ming-emperors&mode=sequence&strategy=concat&count=8` | 纯函数计划预览（无状态），返回出场顺序与元数据 |
+  | `GET /__api/schedule?pack=ming-emperors&mode=weighted&seed=20261104&count=8&loop=0` | 纯函数计划预览（无状态），返回出场顺序、`progress` 以及回显的 `seed` / `count`；`count` 上限 300，固定 seed 时序列完全可复现 |
   | `POST /__api/broadcast` | 有状态控制：`{action: start\|next\|trigger\|reset, packs, mode, strategy, seed, charId, loop}`，把「下一个出场角色」经 `view-appearance` 广播给所有订阅 `/__scene-events` 的客户端 |
   | `GET /__api/settings` | 读取全部控制台设置（branding / display / printer / broadcast / live），展示端只读此端点 |
   | `PUT /__api/settings` | 以深合并方式写入设置并即时持久化（原子写 + 输入净化）；仅控制台（Studio）调用，展示端不写 |
   | `DELETE /__api/settings` | 恢复出厂设置，仅控制台调用 |
-  | `GET /__api/status` | 控制台总览聚合：服务端口与运行时长、数据桥探测（3s 缓存避免轮询堆积）、广播当前状态与 `startedAt`、内容包 / 图片计数。只返回后端真实持有的状态，不臆造展示端内存里的打印队列长度 |
+  | `GET /__api/status` | 控制台总览聚合：服务端口与运行时长、数据桥探测（3s 缓存避免轮询堆积）、广播当前状态与 `startedAt` / `seed`、内容包 / 图片计数。只返回后端真实持有的状态，不臆造展示端内存里的打印队列长度 |
+  | `GET /__api/audit?limit=100&action=pack.save&q=ming` | 控制台专属：按动作 / 关键词倒序查本机写操作，附全量统计 `stats`（总数 / 成功 / 失败 / 最近时间 / 动作清单 / 上限） |
+  | `DELETE /__api/audit` | 清空操作日志（仅控制台），服务端随后补记一条 `audit.clear` |
 
 > 扩展更多人物零代码：在 `/studio/` 导入自定义内容包，或在 `data/packs/` 直接放 JSON，调度引擎会按 `order`/`weight`/`trigger` 自动驱动。`/broadcast.html` 与渲染主页共享同一 `SceneRelay` 通道，可作为 OBS 第二屏或主控大屏。
 
@@ -335,9 +342,11 @@ cd tests && node --test *.test.mjs        # 57 个 node:test 用例（含前端�
 | `test_compat.py` | 旧 `desktop_launcher` / `scene_relay` 薄转发仍指向同一实现 |
 | `test_scene_relay.py` | 有界信令：隔离客户端、不重放旧 offer |
 | `test_scheduler.py` | 出场调度引擎：三模式（sequence/weighted/trigger）、多包组合（concat/interleave/merged）、seed 可复现、进度/历史/循环 |
+| `test_audit.py` | P1 操作日志：持久化 / 倒序与筛选 / 损坏行跳过 / 上限裁剪 / 字段截断 / 清空 / API 路由，以及 schedule 的 seed 回显、可复现与 count 上限 |
+| `test_pack_roundtrip.py` | P1 内容包抽屉数据契约：编辑保存、复制成新包、导出 JSON 再导入、非法编辑 422 不落盘，锁死 tags 数组→分号串（防 M0 脏值回归） |
 | `test_broadcast.py` | 广播控制器经 `SceneRelay` 发布 `view-appearance`、HTTP `/__api/broadcast` 端到端（开始/下一个/触发/重置） |
 | `html-structure.test.mjs` | HTML 不含内联 style/script、引用可解析、模块 import 全命中、importmap 齐全 |
-| `tests/*.test.mjs` | 采集层 protobuf 解码、打印队列、画质预算、语音文案、礼物抢占 |
+| `tests/*.test.mjs` | 采集层 protobuf 解码、打印队列、画质预算、语音文案、礼物抢占；`studio-api.test.mjs` 用最小 fetch 桩锁死工作台请求契约（schedule 复现参数、日志筛选、seed 类型、内容包保存 / 导入） |
 | `test_native_output.py` | GPU + WebView 端到端检查，**手动运行**（`python tests/test_native_output.py`），不参与 pytest 收集 |
 
 ## 首次拉取说明

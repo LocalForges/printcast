@@ -43,7 +43,22 @@ async function localGet(path) {
   return data;
 }
 
+// 出场序列预演：GET /__api/schedule?pack=..&strategy=..&mode=..&seed=..&loop=..&count=..
+// seed 固定后同一组参数必然复现同一条序列，工作台据此生成可分享的复现链接。
+function scheduleQuery({ packs, strategy, mode, count, seed, loop }) {
+  const q = (packs || []).map((p) => 'pack=' + encodeURIComponent(p)).join('&');
+  const tail = []
+    .concat(strategy ? ['strategy=' + encodeURIComponent(strategy)] : [])
+    .concat(mode ? ['mode=' + encodeURIComponent(mode)] : [])
+    .concat(seed !== undefined && seed !== null && seed !== '' ? ['seed=' + encodeURIComponent(seed)] : [])
+    .concat(loop === true || loop === false ? ['loop=' + (loop ? 1 : 0)] : [])
+    .concat(count ? ['count=' + encodeURIComponent(count)] : [])
+    .join('&');
+  return '/schedule' + (q ? '?' + q : '') + (q && tail ? '&' + tail : tail ? '?' + tail : '');
+}
+
 export const api = {
+  scheduleQuery,
   getSchema: () => req('GET', '/schema'),
   getTemplate: (fmt) =>
     fetch('/__api/template.' + fmt).then((r) => r.blob()),
@@ -57,16 +72,16 @@ export const api = {
   uploadMedia: (file) =>
     req('POST', '/media', { body: file, headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) } }),
   deleteMedia: (id) => req('DELETE', '/media/' + id),
-  // 出场顺序预览：GET /__api/schedule?pack=..&strategy=..&mode=..&count=..
-  previewSchedule: ({ packs, strategy, mode, count }) => {
-    const q = packs.map((p) => 'pack=' + encodeURIComponent(p)).join('&');
-    const tail = []
-      .concat(strategy ? ['strategy=' + strategy] : [])
-      .concat(mode ? ['mode=' + mode] : [])
-      .concat(count ? ['count=' + count] : [])
-      .join('&');
-    return req('GET', '/schedule' + (q ? '?' + q : '') + (q && tail ? '&' + tail : tail ? '?' + tail : ''));
+  previewSchedule: (params) => req('GET', scheduleQuery(params)),
+  // 本机操作日志（控制台专属，展示端不调用）：读 / 清空。
+  getAudit: ({ limit = 100, action = '', q = '' } = {}) => {
+    const parts = []
+      .concat(limit ? ['limit=' + encodeURIComponent(limit)] : [])
+      .concat(action ? ['action=' + encodeURIComponent(action)] : [])
+      .concat(q ? ['q=' + encodeURIComponent(q)] : []);
+    return req('GET', '/audit' + (parts.length ? '?' + parts.join('&') : ''));
   },
+  clearAudit: () => req('DELETE', '/audit'),
   // 出场广播控制：POST /__api/broadcast
   broadcast: (action, body = {}) => req('POST', '/broadcast', { json: { action, ...body } }),
   getBroadcast: () => req('GET', '/broadcast'),
