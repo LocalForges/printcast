@@ -53,7 +53,7 @@ DEFAULT_SETTINGS = {
         'idleSeconds': 30,
     },
     'broadcast': {
-        'defaultPacks': ['ming-emperors'],
+        'defaultPacks': ['demo-people'],
         'strategy': 'concat',
         'mode': 'sequence',
         'loop': True,
@@ -68,6 +68,8 @@ DEFAULT_SETTINGS = {
     'live': {
         'defaultRoom': '',
         'platform': 'douyin',
+        # 未接入真实采集时，用内置演示人物填充直播画面，保证开箱即用、第一时间看到效果。
+        'demoFill': True,
     },
 }
 
@@ -176,6 +178,7 @@ def _sanitize_settings(data: dict) -> dict:
         ('broadcast', 'autoPlay', False),
         ('broadcast', 'speech', True),
         ('broadcast', 'scriptedPrint', True),
+        ('live', 'demoFill', True),
     )
     for sec, key, default in bool_fields:
         node = data.setdefault(sec, {})

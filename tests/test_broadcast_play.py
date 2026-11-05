@@ -103,9 +103,12 @@ class BroadcastPlayTests(unittest.TestCase):
         total = data['broadcast']['progress']['total']
         self.jpost('/__api/broadcast',
                    {'action': 'play', 'intervalMs': 200, 'loop': False})
-        # 等待序列走完（total 个，200ms/个）再加缓冲。
-        time.sleep(total * 0.2 + 1.0)
+        # 轮询直到停播（避免固定 sleep 在全量测试的负载下偶发不足而误报）。
+        deadline = time.time() + total * 0.2 + 6.0
         state = self.jget('/__api/broadcast')['broadcast']
+        while state['playing'] and time.time() < deadline:
+            time.sleep(0.1)
+            state = self.jget('/__api/broadcast')['broadcast']
         self.assertFalse(state['playing'])
         self.assertEqual(state['seq'], total)
 

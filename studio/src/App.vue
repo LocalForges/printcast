@@ -12,7 +12,6 @@ watch(theme, (v) => {
 
 const VIEWS = {
   overview: { title: '头像打印', desc: '实时打印状态、内容源切换与一键干预' },
-  broadcast: { title: '剧本播放', desc: '作为「头像打印」的内容源：启动剧本播放，讲到谁就打谁' },
   packs: { title: '内容包', desc: '管理已导入的角色内容包' },
   import: { title: '数据导入', desc: '下载模板、校验并导入 CSV / JSON' },
   media: { title: '图片资源', desc: '上传与清理头像贴图' },
@@ -22,7 +21,7 @@ const VIEWS = {
   audit: { title: '操作日志', desc: '本机写操作可回溯，按动作与关键词筛选' },
 };
 const NAV = [
-  { group: '运行', items: ['overview', 'broadcast'] },
+  { group: '运行', items: ['overview'] },
   { group: '资产', items: ['packs', 'import', 'media'] },
   { group: '编排', items: ['schedule'] },
   { group: '配置', items: ['settings', 'system', 'audit'] },
@@ -39,8 +38,8 @@ const AUDIT_LABELS = {
   'settings.update': '更新控制台设置', 'settings.reset': '恢复出厂设置',
   'pack.save': '保存内容包', 'pack.delete': '删除内容包', 'pack.import': '导入内容包',
   'media.upload': '上传图片', 'media.delete': '删除图片', 'audit.clear': '清空操作日志',
-  'broadcast.start': '启动广播', 'broadcast.next': '推进下一个',
-  'broadcast.trigger': '点名出场', 'broadcast.reset': '重置广播', 'broadcast.plan': '预演序列',
+  'broadcast.start': '启动剧本播放', 'broadcast.next': '推进下一个',
+  'broadcast.trigger': '点名出场', 'broadcast.reset': '重置剧本播放', 'broadcast.plan': '预演序列',
   'bridge.start': '启动数据桥', 'bridge.stop': '停止数据桥',
   'scene.open': '打开打印台窗口', 'live.open': '打开直播窗口',
 };
@@ -549,7 +548,7 @@ async function startFromSchedule() {
     bcSeed.value = p.seed === undefined ? '' : String(p.seed);
     bcLoop.value = !!p.loop;
     await Promise.all([refreshStatus(), loadAudit()]);
-    flash('已按预演参数开播，可在「剧本播放」继续推进');
+    flash('已按预演参数开播，可在「头像打印」继续推进');
   } catch (e) { flash('开播失败：' + e.message, true); }
 }
 
@@ -619,8 +618,8 @@ async function applyResetSettings() {
 }
 function colorValue(v) { return /^#[0-9a-fA-F]{6}$/.test(v || '') ? v : '#4f8cff'; }
 
-// —— 出场广播控制 ——
-const bcPacks = ref([]);
+// —— 剧本播放控制 ——
+const bcPacks = ref(['demo-people']);
 const bcStrategy = ref('concat');
 const bcMode = ref('');
 const bcLoop = ref(false);
@@ -649,6 +648,13 @@ async function bcStart() {
     flash('剧本播放已启动');
   } catch (e) { flash('启动失败：' + e.message, true); }
 }
+// 一键体验：确保选了演示内容包并开播，再打开打印台，让用户第一时间看到效果。
+async function oneClickExperience() {
+  if (!bcPacks.value.includes('demo-people')) bcPacks.value = ['demo-people'];
+  contentSource.value = 'script';
+  if (!bcState.value.active) { await bcStart(); }
+  window.open('/web/index.html', '_blank');
+}
 async function bcNext() {
   try { await api.broadcast('next'); await Promise.all([refreshStatus(), loadAudit()]); }
   catch (e) { flash(e.message, true); }
@@ -663,7 +669,7 @@ async function bcReset() {
   try {
     await api.broadcast('reset');
     await Promise.all([refreshStatus(), loadAudit()]);
-    flash('广播已重置');
+    flash('剧本播放已重置');
   } catch (e) { flash(e.message, true); }
 }
 async function bcPlay() {
@@ -852,7 +858,7 @@ onUnmounted(() => {
         </div>
         <div v-if="error" class="banner err">{{ error }}</div>
         <div v-if="pendingConfirm && ['reset-broadcast', 'reset-settings', 'clear-audit'].includes(pendingConfirm.kind)" class="inline-confirm bar">
-          {{ pendingConfirm.kind === 'reset-broadcast' ? '重置会清空当前广播进度，确定？' : pendingConfirm.kind === 'clear-audit' ? '清空后历史记录不可恢复（本次清空动作会保留一条记录），确定？' : '恢复默认会覆盖全部控制台设置，确定？' }}
+          {{ pendingConfirm.kind === 'reset-broadcast' ? '重置会清空当前剧本播放进度，确定？' : pendingConfirm.kind === 'clear-audit' ? '清空后历史记录不可恢复（本次清空动作会保留一条记录），确定？' : '恢复默认会覆盖全部控制台设置，确定？' }}
           <button class="btn danger small" @click="confirmPending">确定</button>
           <button class="btn ghost small" @click="pendingConfirm = null">取消</button>
         </div>
@@ -868,14 +874,14 @@ onUnmounted(() => {
                 <div class="muted" v-if="bcState.active">
                   {{ (bcState.packIds || []).join(' / ') }} · 第 {{ bcState.seq || 0 }} 位 · 模式 {{ bcState.mode }}
                 </div>
-                <div class="muted" v-else>在上方选好内容包后点「开始剧本播放」，或到「剧本播放」页配置参数。</div>
+                <div class="muted" v-else>在上方选好内容包后点「开始剧本播放」。</div>
               </div>
             </div>
             <div class="hero-actions">
-              <button class="btn primary" @click="bcStart">开始 / 重启广播</button>
+              <button class="btn primary" @click="oneClickExperience">一键体验</button>
+              <button class="btn" @click="bcStart">开始 / 重启剧本播放</button>
               <button class="btn" :disabled="!bcState.active" @click="bcNext">下一个</button>
               <button class="btn ghost" :disabled="!bcState.active" @click="ask('reset-broadcast')">重置进度</button>
-              <button class="btn ghost" @click="go('broadcast')">剧本播放 / 高级控制 →</button>
             </div>
           </section>
 
@@ -887,10 +893,31 @@ onUnmounted(() => {
             </div>
             <div class="row tight" style="margin-top:12px">
               <template v-if="contentSource==='script'">
-                <button class="btn primary" @click="bcStart">开始 / 重启剧本播放</button>
-                <button class="btn" :disabled="!bcState.active" @click="bcNext">下一个</button>
-                <button class="btn" :disabled="!bcState.active" @click="bcPlaying ? bcPause() : bcPlay()">{{ bcPlaying ? '暂停播放' : '自动播放' }}</button>
-                <button class="btn ghost" :disabled="!bcState.active" @click="ask('reset-broadcast')">重置进度</button>
+                <div class="row"><span class="field-label">内容包</span>
+                  <label class="switch" v-for="p in packs" :key="p.id"><input type="checkbox" :value="p.id" v-model="bcPacks" /><span class="track"></span>{{ p.title }}</label>
+                </div>
+                <div class="row">
+                  <label>组合策略<select v-model="bcStrategy"><option value="concat">concat 顺次</option><option value="interleave">interleave 穿插</option><option value="merged">merged 合并</option></select></label>
+                  <label>出场模式<select v-model="bcMode"><option value="">默认</option><option value="sequence">sequence</option><option value="weighted">weighted</option><option value="trigger">trigger</option></select></label>
+                  <label class="switch"><input type="checkbox" v-model="bcLoop" /><span class="track"></span>循环</label>
+                  <label>固定 seed（可复现）<input v-model="bcSeed" placeholder="留空则随机，如 20261104" /></label>
+                </div>
+                <div class="row">
+                  <button class="btn primary" @click="bcStart">开始 / 重启剧本播放</button>
+                  <button class="btn" :disabled="!bcState.active" @click="bcNext">下一个</button>
+                  <button class="btn" :disabled="!bcState.active" @click="bcPlaying ? bcPause() : bcPlay()">{{ bcPlaying ? '暂停播放' : '自动播放' }}</button>
+                  <button class="btn ghost" :disabled="!bcState.active" @click="ask('reset-broadcast')">重置进度</button>
+                </div>
+                <div class="row">
+                  <input v-model="bcCharId" placeholder="点名角色 ID（可选）" class="grow" />
+                  <button class="btn" :disabled="!bcState.active" @click="bcTrigger">点名出场</button>
+                </div>
+                <div class="state-line">
+                  <span :class="bcState.active ? 'tag ok' : 'tag mute'">{{ bcState.active ? '进行中' : '待机' }}</span>
+                  <span v-if="bcState.active" :class="bcState.playing ? 'tag ok' : 'tag mute'">{{ bcState.playing ? '自动播放中' : '已暂停（手动）' }}</span>
+                  <span class="muted" v-if="bcState.active">{{ (bcState.packIds || []).join(', ') }} · 模式 {{ bcState.mode }} · seed {{ bcState.seed === null || bcState.seed === undefined ? '未固定' : bcState.seed }} · 已出场 {{ bcState.seq || 0 }}<template v-if="currentChar"> · 当前 {{ currentChar.name }}</template></span>
+                  <span class="muted" v-else>尚未开始或已重置。选好内容包后点「开始 / 重启剧本播放」。</span>
+                </div>
               </template>
               <template v-else>
                 <button class="btn primary" @click="toggleBridge">{{ status && status.bridge && status.bridge.ok ? '停止数据桥' : '启动数据桥' }}</button>
@@ -953,38 +980,6 @@ onUnmounted(() => {
               </div>
             </section>
           </div>
-        </template>
-
-        <!-- ============ 剧本播放 ============ -->
-        <template v-else-if="activeView === 'broadcast'">
-          <section class="card">
-            <div class="card-head"><h2>剧本播放参数</h2><span class="muted">未开播时初值来自控制台设置</span></div>
-            <div class="row"><span class="field-label">内容包</span>
-              <label class="switch" v-for="p in packs" :key="p.id"><input type="checkbox" :value="p.id" v-model="bcPacks" /><span class="track"></span>{{ p.title }}</label>
-            </div>
-            <div class="row">
-              <label>组合策略<select v-model="bcStrategy"><option value="concat">concat 顺次</option><option value="interleave">interleave 穿插</option><option value="merged">merged 合并</option></select></label>
-              <label>出场模式<select v-model="bcMode"><option value="">默认</option><option value="sequence">sequence</option><option value="weighted">weighted</option><option value="trigger">trigger</option></select></label>
-              <label class="switch"><input type="checkbox" v-model="bcLoop" /><span class="track"></span>循环</label>
-              <label>固定 seed（可复现）<input v-model="bcSeed" placeholder="留空则随机，如 20261104" /></label>
-            </div>
-            <div class="row">
-              <button class="btn primary" @click="bcStart">开始 / 重启广播</button>
-              <button class="btn" :disabled="!bcState.active" @click="bcNext">下一个</button>
-              <button class="btn" :disabled="!bcState.active" @click="bcPlaying ? bcPause() : bcPlay()">{{ bcPlaying ? '暂停播放' : '自动播放' }}</button>
-              <button class="btn ghost" :disabled="!bcState.active" @click="ask('reset-broadcast')">重置</button>
-            </div>
-            <div class="row">
-              <input v-model="bcCharId" placeholder="点名角色 ID（可选）" class="grow" />
-              <button class="btn" :disabled="!bcState.active" @click="bcTrigger">点名出场</button>
-            </div>
-            <div class="state-line">
-              <span :class="bcState.active ? 'tag ok' : 'tag mute'">{{ bcState.active ? '进行中' : '待机' }}</span>
-              <span v-if="bcState.active" :class="bcState.playing ? 'tag ok' : 'tag mute'">{{ bcState.playing ? '自动播放中' : '已暂停（手动）' }}</span>
-              <span class="muted" v-if="bcState.active">{{ (bcState.packIds || []).join(', ') }} · 模式 {{ bcState.mode }} · seed {{ bcState.seed === null || bcState.seed === undefined ? '未固定' : bcState.seed }} · 已出场 {{ bcState.seq || 0 }}<template v-if="currentChar"> · 当前 {{ currentChar.name }}</template></span>
-              <span class="muted" v-else>尚未开始或已重置。</span>
-            </div>
-          </section>
         </template>
 
         <!-- ============ 内容包（P1：搜索 / 排序 / 抽屉 / 导入导出）============ -->
@@ -1085,7 +1080,7 @@ onUnmounted(() => {
         <!-- ============ 排期预演（P1：时间轴 / 固定 seed / 本地预演）============ -->
         <template v-else-if="activeView === 'schedule'">
           <section class="card">
-            <div class="card-head"><h2>生成出场序列</h2><span class="muted">预演只在工作台内高亮，不触发真实广播与打印</span></div>
+            <div class="card-head"><h2>生成出场序列</h2><span class="muted">预演只在工作台内高亮，不触发真实剧本播放与打印</span></div>
             <div class="row">
               <label>组合策略<select v-model="schedStrategy"><option value="concat">concat 顺次</option><option value="interleave">interleave 轮转穿插</option><option value="merged">merged 合并排序</option></select></label>
               <label>出场模式<select v-model="schedMode"><option value="">默认</option><option value="sequence">sequence</option><option value="weighted">weighted</option><option value="trigger">trigger</option></select></label>
@@ -1104,7 +1099,7 @@ onUnmounted(() => {
             <div class="repro">
               <span class="tag mute">固定 seed 复现</span>
               <code class="repro-url">{{ schedUrl }}</code>
-              <span class="muted">同一组 pack + 策略 + 模式 + seed 必然得到同一条序列；「按此配置开播」会把 seed 原样交给广播控制器，state 里可核对。</span>
+              <span class="muted">同一组 pack + 策略 + 模式 + seed 必然得到同一条序列；「按此配置开播」会把 seed 原样交给剧本播放控制器，state 里可核对。</span>
             </div>
           </section>
 
@@ -1202,7 +1197,7 @@ onUnmounted(() => {
                 </div>
                 <div class="checks">
                   <label class="switch"><input type="checkbox" v-model="settings.broadcast.loop" /><span class="track"></span>循环</label>
-                  <label class="switch"><input type="checkbox" v-model="settings.broadcast.autoStart" /><span class="track"></span>启动即广播</label>
+                  <label class="switch"><input type="checkbox" v-model="settings.broadcast.autoStart" /><span class="track"></span>开机即播（剧本播放）</label>
                   <label class="switch"><input type="checkbox" v-model="settings.broadcast.speech" /><span class="track"></span>语音播报</label>
                   <label class="switch"><input type="checkbox" v-model="settings.broadcast.scriptedPrint" /><span class="track"></span>打到 3D 打印机</label>
                 </div>
@@ -1213,6 +1208,10 @@ onUnmounted(() => {
               <button class="group-head" @click="openGroups.live = !openGroups.live"><span>直播</span><span class="muted">{{ openGroups.live ? '收起' : '展开' }}</span></button>
               <div v-if="openGroups.live" class="group-body">
                 <div class="row"><label>默认直播间号<input v-model="settings.live.defaultRoom" placeholder="留空则手动输入" /></label><label>平台<select v-model="settings.live.platform"><option value="douyin">抖音</option><option value="other">其它</option></select></label></div>
+                <div class="row">
+                  <label class="switch"><input type="checkbox" v-model="settings.live.demoFill" /><span class="track"></span>未接采集时用演示人物填充</label>
+                  <span class="muted">开启后，没有真实直播间连接时自动用内置「演示人物」出场，开箱即看到效果。</span>
+                </div>
               </div>
             </section>
           </template>
@@ -1318,7 +1317,7 @@ onUnmounted(() => {
                 </tr>
               </tbody>
             </table>
-            <p class="muted hint-line">覆盖设置 / 内容包 / 图片 / 广播 / 数据桥 / 窗口等全部本机写操作，由服务端记录（不靠浏览器上报），失败动作同样留痕；展示端高频信令不记录。数据只写在本机 <code>data/audit.jsonl</code>，超过上限自动淘汰最旧记录。清空后会保留一条「清空操作日志」记录，可回溯性不中断。</p>
+            <p class="muted hint-line">覆盖设置 / 内容包 / 图片 / 剧本播放 / 数据桥 / 窗口等全部本机写操作，由服务端记录（不靠浏览器上报），失败动作同样留痕；展示端高频信令不记录。数据只写在本机 <code>data/audit.jsonl</code>，超过上限自动淘汰最旧记录。清空后会保留一条「清空操作日志」记录，可回溯性不中断。</p>
           </section>
         </template>
 

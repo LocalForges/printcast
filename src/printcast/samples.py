@@ -9,18 +9,84 @@
 """
 from __future__ import annotations
 
-from . import storage
+import hashlib
+import os
+
+from . import config, storage
 
 
 def builtin_packs() -> list:
     """返回全部内置内容包的原始 dict 列表（未落盘）。"""
     return [
+        _demo_people(),
         _ming_emperors(),
         _sanguo(),
         _shuihu(),
         _honglou(),
         _xiyouji(),
     ]
+
+
+# 演示人物：与展示端内置 demoNames 一致，开箱即有数据、头像真实可见（彩色首字 SVG）。
+_DEMO_NAMES = [
+    '橘子汽水', '星星同学', '奶油小熊', '薄荷拿铁', '蓝莓布丁', '桃桃乌龙',
+    '快乐阿柴', '月亮晚安', '杨梅吐气', '椰奶泡泡', '芝士芋泥', '焦糖玛奇朵',
+    '苏打绿豆', '元气布丁', '西瓜甜不甜', '奶盖十三', '柚子茶茶', '豆乳盒子',
+    '麻薯团子', '蛋挞小伙', '软糖阿姨', '气泡水呀', '栗子同学', '糯米滋滋',
+]
+
+
+def _demo_people() -> dict:
+    people = []
+    for i, name in enumerate(_DEMO_NAMES):
+        people.append((f'demo-{i}', name, i + 1, f'欢迎{name}来到直播间，为你现场打印专属头像', '演示;头像打印', 2))
+    pack = _pack('demo-people', '演示人物', 'sequence', False,
+                 '开箱即用的演示内容包：24 位虚拟观众，头像为彩色首字，无需上传即可体验', people)
+    # 头像存为纯文件名（schema 不允许斜杠）；展示端 mediaUrl 会把 *.svg 映射到 /avatars/ 静态路由。
+    for i, ch in enumerate(pack['characters']):
+        ch['avatar'] = 'demo-%d.svg' % i
+    return pack
+
+
+def _ensure_demo_media() -> None:
+    """把演示人物的彩色首字 SVG 头像落盘到 data/media/（幂等：已存在则跳过）。
+
+    零第三方依赖：纯文本 SVG，由浏览器光栅化为 WebGL 贴图；
+    若某浏览器无法作为贴图加载，展示端会回退到同款首字彩色徽章。
+    """
+    media_dir = os.path.join(config.DATA_DIR, 'media')
+    try:
+        os.makedirs(media_dir, exist_ok=True)
+    except OSError:
+        return
+    for i, name in enumerate(_DEMO_NAMES):
+        svg = _initial_avatar_svg(name)
+        path = os.path.join(media_dir, f'demo-{i}.svg')
+        if os.path.exists(path):
+            continue
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(svg)
+        except OSError:
+            continue
+
+
+def _initial_avatar_svg(name: str) -> str:
+    label = name[:2] if len(name) >= 2 else name
+    h = int(hashlib.md5(name.encode('utf-8')).hexdigest(), 16) % 360
+    h2 = (h + 38) % 360
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">'
+        '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+        f'<stop offset="0" stop-color="hsl({h},62%,56%)"/>'
+        f'<stop offset="1" stop-color="hsl({h2},60%,42%)"/>'
+        '</linearGradient></defs>'
+        '<rect width="512" height="512" rx="104" fill="url(#g)"/>'
+        f'<text x="256" y="266" font-size="208" fill="#ffffff" fill-opacity="0.96" '
+        'text-anchor="middle" dominant-baseline="central" '
+        'font-family="-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'
+        f'{label}</text></svg>'
+    )
 
 
 def _ming_emperors() -> dict:
@@ -137,6 +203,7 @@ def seed_builtin_packs(overwrite: bool = False) -> dict:
     返回 {written, skipped, errors}。存在性判断以库为准（不再是「看 JSON 文件
     在不在」）；overwrite=False 时跳过已存在同 id 的包，避免覆盖用户自有数据。
     """
+    _ensure_demo_media()
     written, skipped, errors = [], [], []
     for pack in builtin_packs():
         try:

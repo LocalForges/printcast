@@ -4,6 +4,20 @@
 
 ---
 
+## 控制台→打印台实时同步 · 剧本播放并入内容源 · 演示数据开箱即用（2026-11-05）
+
+针对四条反馈（设置不同步、剧本播放独立菜单、直播无演示数据、操作不够直观）的一次收敛，全部遵循「控制台写 / 展示端只读 / 零第三方依赖」。
+
+- **设置实时同步到打印台**：展示端（`web/app.zh.mjs`、`app.en.mjs`）原先只在加载时 `fetch('/__api/settings')` 一次，且自带一份写 `localStorage` 的规则编辑器，形成双源。现改为**每 5 秒轮询 `/__api/settings`** 并重应用 `printer.rules / autoDemo / demoGapMs / idleFill / idleSeconds`、`broadcast.scriptedPrint`、`live.*` 与品牌展示；删除打印台本地规则编辑与 localStorage 写入，控制台成为唯一可写源，改完约 5 秒内自动生效（含控制台内嵌的打印台预览），无需刷新页面。
+- **「剧本播放」并入内容源**：删除导航里的独立「剧本播放」一级菜单与整页模板，其全部控件（内容包 / 策略 / 模式 / 循环 / seed / 开始·下一个·播放·暂停·点名·重置 / 状态行）并入「头像打印」页的内容源分段控件——选「剧本播放」即内联显示，选「实时直播」显示直播控制，消除重复入口与操作困惑。
+- **演示数据开箱即用**：`samples.py` 新增内置「演示人物」内容包（24 位虚拟观众），并**生成彩色首字 SVG 头像**落到 `data/media/`；新增只读静态路由 `/avatars/<name>.svg`（路径穿越防护，`Content-Type: image/svg+xml`）服务这些头像——媒体系统的媒体 id 仅接受 12 位 hex 的 raster，SVG 不计上传校验，故单开此路由。`/__api/packs` 首屏即有 `demo-people`，头像真实可见。
+- **启动自动种子 + 直播演示填充**：服务启动时幂等调用 `samples.seed_builtin_packs()`，全新库也立即有数据；新增 `live.demoFill`（默认开），未接真实采集时自动用演示人物出场；默认 `broadcast.defaultPacks` 切到 `demo-people`，开机即播即为演示头像。
+- **易用性收尾**：「头像打印」页新增**「一键体验」**（选演示包→开播→打开打印台）；导航精简（运行=头像打印；资产=内容包/导入/图片；编排=排期预演；配置=设置/系统/日志）；系统/日志/设置里残留的「出场广播/广播」统一为「剧本播放/内容源」。
+
+回归：pytest **126 项全绿**；Studio 重建通过（`index-BPdx3Nxu.js` / `index-DyPETmzK.css`，含「一键体验 / 演示人物 / 未接采集时用演示人物填充」）。冒烟：`/avatars/demo-0.svg` → 200 `image/svg+xml`、`/media/*.png` 不受影响、`/__api/settings` 默认 `defaultPacks=[demo-people]`、`autoStart=true`、`demoFill=true`，重启后自动播放 `demo-people`（`current=橘子汽水, avatar=demo-0.svg`）。
+
+---
+
 ## 出场广播自动播放 + 开机即播（2026-11-05）
 
 「画面不能播放」的根因是展示端只读、必须由控制台持续「推进下一个」才会动，而此前**没有任何自动推进机制**，且默认 `autoStart=false`，于是展示页一直停在「等待出场」。本轮补齐自动播放：

@@ -1,0 +1,298 @@
+{
+  "id": "demo-people",
+  "title": "演示人物",
+  "mode": "sequence",
+  "loop": false,
+  "description": "开箱即用的演示内容包：24 位虚拟观众，头像为彩色首字，无需上传即可体验",
+  "characters": [
+    {
+      "id": "demo-0",
+      "name": "橘子汽水",
+      "order": 1,
+      "avatar": "demo-0.svg",
+      "speech": "欢迎橘子汽水来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-1",
+      "name": "星星同学",
+      "order": 2,
+      "avatar": "demo-1.svg",
+      "speech": "欢迎星星同学来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-2",
+      "name": "奶油小熊",
+      "order": 3,
+      "avatar": "demo-2.svg",
+      "speech": "欢迎奶油小熊来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-3",
+      "name": "薄荷拿铁",
+      "order": 4,
+      "avatar": "demo-3.svg",
+      "speech": "欢迎薄荷拿铁来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-4",
+      "name": "蓝莓布丁",
+      "order": 5,
+      "avatar": "demo-4.svg",
+      "speech": "欢迎蓝莓布丁来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-5",
+      "name": "桃桃乌龙",
+      "order": 6,
+      "avatar": "demo-5.svg",
+      "speech": "欢迎桃桃乌龙来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-6",
+      "name": "快乐阿柴",
+      "order": 7,
+      "avatar": "demo-6.svg",
+      "speech": "欢迎快乐阿柴来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-7",
+      "name": "月亮晚安",
+      "order": 8,
+      "avatar": "demo-7.svg",
+      "speech": "欢迎月亮晚安来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-8",
+      "name": "杨梅吐气",
+      "order": 9,
+      "avatar": "demo-8.svg",
+      "speech": "欢迎杨梅吐气来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-9",
+      "name": "椰奶泡泡",
+      "order": 10,
+      "avatar": "demo-9.svg",
+      "speech": "欢迎椰奶泡泡来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-10",
+      "name": "芝士芋泥",
+      "order": 11,
+      "avatar": "demo-10.svg",
+      "speech": "欢迎芝士芋泥来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-11",
+      "name": "焦糖玛奇朵",
+      "order": 12,
+      "avatar": "demo-11.svg",
+      "speech": "欢迎焦糖玛奇朵来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-12",
+      "name": "苏打绿豆",
+      "order": 13,
+      "avatar": "demo-12.svg",
+      "speech": "欢迎苏打绿豆来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-13",
+      "name": "元气布丁",
+      "order": 14,
+      "avatar": "demo-13.svg",
+      "speech": "欢迎元气布丁来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-14",
+      "name": "西瓜甜不甜",
+      "order": 15,
+      "avatar": "demo-14.svg",
+      "speech": "欢迎西瓜甜不甜来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-15",
+      "name": "奶盖十三",
+      "order": 16,
+      "avatar": "demo-15.svg",
+      "speech": "欢迎奶盖十三来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-16",
+      "name": "柚子茶茶",
+      "order": 17,
+      "avatar": "demo-16.svg",
+      "speech": "欢迎柚子茶茶来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-17",
+      "name": "豆乳盒子",
+      "order": 18,
+      "avatar": "demo-17.svg",
+      "speech": "欢迎豆乳盒子来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-18",
+      "name": "麻薯团子",
+      "order": 19,
+      "avatar": "demo-18.svg",
+      "speech": "欢迎麻薯团子来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-19",
+      "name": "蛋挞小伙",
+      "order": 20,
+      "avatar": "demo-19.svg",
+      "speech": "欢迎蛋挞小伙来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-20",
+      "name": "软糖阿姨",
+      "order": 21,
+      "avatar": "demo-20.svg",
+      "speech": "欢迎软糖阿姨来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-21",
+      "name": "气泡水呀",
+      "order": 22,
+      "avatar": "demo-21.svg",
+      "speech": "欢迎气泡水呀来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-22",
+      "name": "栗子同学",
+      "order": 23,
+      "avatar": "demo-22.svg",
+      "speech": "欢迎栗子同学来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    },
+    {
+      "id": "demo-23",
+      "name": "糯米滋滋",
+      "order": 24,
+      "avatar": "demo-23.svg",
+      "speech": "欢迎糯米滋滋来到直播间，为你现场打印专属头像",
+      "weight": 2.0,
+      "tags": [
+        "演示",
+        "头像打印"
+      ]
+    }
+  ],
+  "updated": "2026-11-05T06:26:51+00:00"
+}

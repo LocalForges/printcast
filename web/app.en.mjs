@@ -66,7 +66,7 @@ import {Reflector} from '../assets/Reflector.js';
 const $=id=>document.getElementById(id),stage=$('stage'),scene=new THREE.Scene();
 // —— Console settings (display side is read-only; writes only happen in Studio via /__api/settings PUT).——
 let pcSettings=null;
-function mediaUrl(id){ if(!id) return ''; return /^[a-z0-9._-]+\.(?:png|jpe?g|webp)$/i.test(id) ? '/media/'+id : id; }
+function mediaUrl(id){ if(!id) return ''; if(/^https?:/i.test(id)||id.charAt(0)==='/') return id; if(/\.svg$/i.test(id)) return '/avatars/'+id; return /^[a-z0-9._-]+\.(?:png|jpe?g|webp)$/i.test(id) ? '/media/'+id : id; }
 const machineAudio=new PrinterAudio();
 scene.background=new THREE.Color('#d8c8b3');scene.fog=null;
 const camera=new THREE.PerspectiveCamera(36,1,.1,500);camera.position.set(6.8,9.6,24.5);const renderer=new THREE.WebGLRenderer({antialias:false,powerPreference:'high-performance'});renderer.setPixelRatio(2);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.localClippingEnabled=true;renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;stage.prepend(renderer.domElement);
@@ -283,8 +283,8 @@ box(1.58,.055,.72,0,.726,.005,porcelain,g);box(1.7,.035,.8,0,.572,0,porcelain,g)
 let labelTex=texture(1024,420,(c,w,h)=>{c.fillStyle=tier===2?'#242a2b':'#f5efe3';c.fillRect(0,0,w,h);c.fillStyle=tier===2?'#fff4dc':'#181b1b';c.textAlign='center';const name=v.name;let font=94;do{c.font='800 '+font+'px "Microsoft YaHei",sans-serif';if(c.measureText(name).width<w-60)break;font-=2}while(font>28);c.fillText(name,w/2,119);c.globalAlpha=.3;c.fillRect(44,148,w-88,3);c.globalAlpha=1;c.font='900 194px "Microsoft YaHei",sans-serif';c.fillText(v.score+' pts',w/2,345)});labelTex.anisotropy=renderer.capabilities.getMaxAnisotropy();let label=mesh(new THREE.PlaneGeometry(1.46,.58),new THREE.MeshStandardMaterial({map:labelTex,roughness:.42,metalness:.05,clippingPlanes:[plane]}),g);label.position.set(0,.95,.325);label.rotation.x=-.16;
 let entry={g,plane,avatarMat,labelTex,glint,glintAge:null,disposed:false};const applyAvatar=tex=>{if(entry.disposed){tex.dispose();return}tex.colorSpace=THREE.SRGBColorSpace;tex.anisotropy=renderer.capabilities.getMaxAnisotropy();tex.minFilter=THREE.LinearMipmapLinearFilter;tex.magFilter=THREE.LinearFilter;tex.generateMipmaps=true;avatarMat.map=tex;avatarMat.emissiveMap=tex;avatarMat.color.set('#ffffff');avatarMat.needsUpdate=true};new THREE.TextureLoader().load(v.avatar||fallbackAvatar(v.name),applyAvatar,undefined,()=>{ if(v.avatar){markMissingAsset(v.avatar)} new THREE.TextureLoader().load(fallbackAvatar(v.name),applyAvatar)});return entry}
 function disposeProduct(p){p.disposed=true;p.g.removeFromParent();p.g.traverse(o=>{if(o.isMesh||o.isLineSegments){o.geometry.dispose();if(o.material.map&&o.material.map!==wood&&o.material.map!==grain)o.material.map.dispose();o.material.dispose()}})}
-let autoDemo=true;let lastDemoFill=0;function replenishDemo(force){if(!autoDemo||paused||busy||queue.length||!demoPeople.length)return;const demoGap=Number(printRules.demoGapMs);if(!force&&(demoGap===0||(lastDemoFill&&Date.now()-lastDemoFill<demoGap)))return;lastDemoFill=Date.now();const person=randomPerson();queue.push({...person,size:Math.random()<.3?'large':'small',priority:false,source:'auto demo',copy:1,total:1});renderQueue();updateScreen()}
-function idleTestFill(){if(!printRules.idleFill||paused||!demoPeople.length||queue.length>=2||Date.now()-lastLiveMsgAt<printRules.idleSeconds*1000)return;lastLiveMsgAt=Date.now();liveEvent('like',randomPerson(),1,null,'30s idle · test avatar',false)}
+let autoDemo=true;let lastDemoFill=0;function replenishDemo(force){if(!autoDemo||paused||busy||queue.length||!demoPeople.length)return;if(pcSettings&&pcSettings.live&&pcSettings.live.demoFill===false)return;const demoGap=Number(printRules.demoGapMs);if(!force&&(demoGap===0||(lastDemoFill&&Date.now()-lastDemoFill<demoGap)))return;lastDemoFill=Date.now();const person=randomPerson();queue.push({...person,size:Math.random()<.3?'large':'small',priority:false,source:'auto demo',copy:1,total:1});renderQueue();updateScreen()}
+function idleTestFill(){if(!printRules.idleFill||paused||!demoPeople.length||queue.length>=2||Date.now()-lastLiveMsgAt<printRules.idleSeconds*1000)return;if(pcSettings&&pcSettings.live&&pcSettings.live.demoFill===false)return;lastLiveMsgAt=Date.now();liveEvent('like',randomPerson(),1,null,'30s idle · test avatar',false)}
 function preemptForGift(){
  if(paused||!busy||active?.priority||!queue[0]?.priority)return;
  if(phase==='printing'){
@@ -413,7 +413,7 @@ async function connectBridge(){if(bridgeConnecting||(socket&&socket.readyState<=
 const demoNames=['Orange Soda','Star Student','Cream Bear','Mint Latte','Blueberry Pudding','Peach Oolong','Happy Corgi','Moon Night','Bayberry','Coconut Bubble','Cheese Taro','Caramel Macchiato','Soda Bean','Energy Pudding','Watermelon','Milk Cap 13','Yuzu Tea','Tofu Box','Mochi','Egg Tart Guy','Gummy Aunt','Sparkling Water','Chestnut','Sticky Rice'];
 function testAvatar(i){const c=document.createElement('canvas');c.width=c.height=256;const x=c.getContext('2d');const colors=['#ffb284','#a9b8f4','#d8b992','#91cbb1','#ba9ee0','#efa8b9','#e6bc6a','#89b9cd','#f4a4a4','#9fd6a8','#d9c2f0','#f0d9a8','#a8d9d4','#f4b8d8','#c4d98a','#e0a8c4'];x.fillStyle=colors[i%colors.length];x.fillRect(0,0,256,256);x.fillStyle='#ffffff30';for(let k=0;k<6;k++){x.beginPath();x.arc(k*58-12,k%2?30:225,35,0,Math.PI*2);x.fill()}const animal=i%3!==1;x.fillStyle=animal?'#fff1da':'#423b51';for(const xx of [76,180]){x.beginPath();x.arc(xx,77,animal?30:24,0,Math.PI*2);x.fill()}x.fillStyle=animal?'#fff1da':'#f6d4bd';x.beginPath();x.ellipse(128,134,78,83,0,0,Math.PI*2);x.fill();x.fillStyle='#353342';for(const xx of [101,155]){x.beginPath();x.ellipse(xx,127,7,10,0,0,Math.PI*2);x.fill()}x.fillStyle='#eea193';for(const xx of [82,174]){x.beginPath();x.ellipse(xx,151,14,8,0,0,Math.PI*2);x.fill()}x.strokeStyle='#57424a';x.lineWidth=5;x.lineCap='round';x.beginPath();x.arc(128,149,18,0.15,Math.PI-.15);x.stroke();if(i%2===0){x.fillStyle='#8d624c';x.beginPath();x.ellipse(128,146,8,6,0,0,Math.PI*2);x.fill()}return c.toDataURL('image/png')}
 let demoPeople=demoNames.map((name,i)=>({name,avatar:testAvatar(i)}));
-setTimeout(()=>{if(liveEverConnected)return;const s0=[...demoPeople];for(let i=s0.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[s0[i],s0[j]]=[s0[j],s0[i]]}s0.slice(0,6).forEach(p=>liveEvent('like',p,1,null,'demo',false))},0);
+setTimeout(()=>{if(liveEverConnected)return;if(pcSettings&&pcSettings.live&&pcSettings.live.demoFill===false)return;const s0=[...demoPeople];for(let i=s0.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[s0[i],s0[j]]=[s0[j],s0[i]]}s0.slice(0,6).forEach(p=>liveEvent('like',p,1,null,'demo',false))},0);
 $('demo').textContent='More demo avatars';$('demo').onclick=()=>updateScreen();
 updateScreen();
 $('toggle').onclick=()=>{paused=!paused;machineAudio.cue(paused?'pause':'resume');$('toggle').textContent=paused?'Resume printing':'Pause printing';if(!paused)next()};$('skip').onclick=()=>{machineAudio.cue('skip');if(currentProduct){const i=products.indexOf(currentProduct);if(i>=0)products.splice(i,1);disposeProduct(currentProduct)}currentProduct=null;transferState=null;articulateArm();active=null;busy=false;phase='idle';next()};// Explicit opt-in required by browser audio policies.
@@ -459,16 +459,19 @@ for(const img of connectionPanel.querySelectorAll('.live-rules img')){const fall
 const livePanel=document.createElement('div');livePanel.className='panel';livePanel.innerHTML='<div class="panelhead">Live Connection <small>LIVE ROOM</small></div><div class="body"><div id="live-status" style="font-size:13px;line-height:1.7"><span style="color:#e08f8f">● Offline · local demo</span></div><div id="live-room" style="font-size:12px;line-height:1.7"></div><div id="print-progress" style="font-size:12px;line-height:1.7;color:#b9c6d6;margin-top:6px">Now: idle</div><div style="display:flex;gap:6px;margin-top:8px"><input id="room-input" placeholder="Room ID or link, press Enter" style="flex:1;min-width:0;padding:8px;background:#141a24;border:1px solid #333c4c;border-radius:6px;color:#e8eef6;font-size:12px"><button id="room-set" class="secondary" style="padding:8px 12px;white-space:nowrap">Switch</button></div><div style="margin-top:10px"><button id="room-open" style="width:100%">Open live window</button><div class="row"><button id="capture-start">Start capture</button><button id="capture-stop" class="secondary">Stop capture</button></div><div id="room-open-status" role="status" style="font-size:12px;line-height:1.7;color:#9fb3c8;margin-top:6px">Log in inside the window; capture also needs the bridge.</div></div><div id="live-fetch" style="font-size:12px;line-height:1.7;color:#9fb3c8;margin-top:6px">Capture: connecting…</div><div id="yield-note" style="font-size:12px;line-height:1.7;color:#ffd9a8;margin-top:2px"></div><div class="metrics" style="margin-top:10px"><div class="metric"><small>Likes</small><strong id="stat-likes">0</strong></div><div class="metric"><small>Comments</small><strong id="stat-comments">0</strong></div><div class="metric"><small>Gifts</small><strong id="stat-gifts">0</strong></div></div><details id="print-rules" open style="margin-top:10px"><summary style="cursor:pointer;color:#d4dce6;font-size:12px;user-select:none">Print rules (changes saved automatically)</summary><div id="print-rules-body" style="display:grid;gap:7px;margin-top:9px;font-size:12px;color:#b9c6d6"></div><p class="note" style="margin-top:8px">Comments and gifts print by default; changes apply instantly and are remembered.</p></details></div>';
 const historyPanel=document.createElement('div');historyPanel.className='panel';historyPanel.innerHTML='<div class="panelhead">Print Log <small>PRINT LOG</small></div><div class="body"><div id="print-history" class="queue" style="max-height:320px;overflow:auto"></div></div>';
 connectionPanel.before(livePanel,historyPanel);
-const printRules=Object.assign({comment:true,join:false,like:false,follow:false,gift:true,giftVoice:true,joinVoice:true,idleFill:false,demoGapMs:30000},(()=>{try{const s=JSON.parse(localStorage.getItem('printRules')||'{}')||{};if(s.v!==2){delete s.gift;s.v=2}return s}catch(e){return{}}})());
+const printRules=Object.assign({comment:true,join:false,like:false,follow:false,gift:true,giftVoice:true,joinVoice:true,idleFill:false,demoGapMs:30000},{});
 for(const [key,value] of Object.entries(PRINT_DEFAULTS)){if(printRules[key]===undefined)printRules[key]=value}
-// —— Console settings: read-only on the display side. Reuse window.__PC.ready (the single GET). ——
-// The console is the only authority: printer.* overrides local defaults; localStorage stays as offline fallback.
-(async function loadConsoleSettings(){
+// —— Console settings: read-only on the display side. Poll /__api/settings (every 5s) for live sync. ——
+// The console is the only authority: printer.* / broadcast.scriptedPrint / live.* override local defaults.
+async function refreshConsoleSettings(){
   try{
-    const s = (window.__PC && window.__PC.ready) ? await window.__PC.ready : null;
-    pcSettings = s || null;
-    if(!pcSettings) return;
-    const p = pcSettings.printer || {};
+    const r = await fetch('/__api/settings', (window.AbortSignal&&AbortSignal.timeout)?{signal:AbortSignal.timeout(3000)}:undefined);
+    if(!r.ok) return;
+    const d = await r.json();
+    const s = (d && d.settings) || null;
+    if(!s) return;
+    pcSettings = s;
+    const p = s.printer || {};
     if(p.rules && typeof p.rules==='object') Object.assign(printRules,p.rules);
     for(const k of ['demoGapMs','idleSeconds','idleFill']) if(p[k]!==undefined) printRules[k]=p[k];
     if(typeof p.autoDemo==='boolean'){
@@ -476,21 +479,23 @@ for(const [key,value] of Object.entries(PRINT_DEFAULTS)){if(printRules[key]===un
       const btn=window.__autoDemoButton;
       if(btn){ btn.textContent=autoDemo?'Auto demo: On':'Auto demo: Off'; btn.setAttribute('aria-pressed',String(autoDemo)); }
     }
-    const live=pcSettings.live||{};
+    const live=s.live||{};
     const ri=$('room-input');
     if(ri){
       if(live.defaultRoom&&!ri.value) ri.value=live.defaultRoom;
       ri.setAttribute('data-room-input','');
       ri.placeholder=live.platform==='other'?'Room ID or live link':'Douyin room ID or link, press Enter';
     }
-    // Boundary: config lives in the console; the display-side rules panel becomes read-only.
     const host=$('print-rules-body');
     if(host){ renderPrintSettings(host,printRules,()=>{}); host.querySelectorAll('input,select').forEach(el=>{el.disabled=true}); }
     const det=$('print-rules');
     if(det){ const sum=det.querySelector('summary'); if(sum) sum.textContent='Print rules (set in console · read-only)';
-      const note=det.querySelector('.note'); if(note) note.innerHTML='Change these in the <a href="/studio/" style="color:var(--accent)">console /studio</a>, then refresh.'; }
+      const note=det.querySelector('.note'); if(note) note.innerHTML='Change these in the <a href="/studio/" style="color:var(--accent)">console /studio</a>; synced here within ~5s.'; }
+    if(window.__PC && window.__PC.apply) window.__PC.apply(s);
   }catch(e){}
-})();
+}
+refreshConsoleSettings();
+setInterval(refreshConsoleSettings,5000);
 // —— M1: route broadcast view-appearance events into the 3D print queue ("print whoever is on screen"). ——
 let appearanceCursor=null; const appearanceClient='renderer-'+Math.random().toString(36).slice(2,10);
 function enqueueAppearance(ap){
@@ -512,9 +517,6 @@ async function appearanceTick(){
   appearanceTimer=setTimeout(appearanceTick,600);
 }
 let appearanceTimer=setTimeout(appearanceTick,600);
-printRules.v=2;
-function savePrintRules(){try{localStorage.setItem('printRules',JSON.stringify(printRules))}catch(e){}}
-renderPrintSettings($('print-rules-body'),printRules,savePrintRules);
 function sendRoom(raw){const id=String(raw||'').match(/(\d{5,25})/);const i=$('room-input');if(!id){if(i){i.value='';i.placeholder='Room ID not recognized — enter a room ID or link'}return}const room=id[1];try{localStorage.setItem('printer-live-room',room)}catch(e){}const lr=$('live-room');if(socket&&socket.readyState===1){socket.send(JSON.stringify({type:'set-room',room}));if(lr)lr.innerHTML='<span style="color:#d9b96a">Switching to room '+room+' …</span>'}else if(lr)lr.innerHTML='<span style="color:#e08f8f">Bridge offline — will use room '+room+' after reconnect</span>'}
 async function openLiveRoomWindow(){
  const raw=$('room-input').value.trim();

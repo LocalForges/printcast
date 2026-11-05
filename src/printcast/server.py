@@ -30,7 +30,7 @@ from .config import (
     HTTP_PORT, HTTP_PORT_FALLBACKS, IS_MAC, LIVE_DEBUG_PORT, PROFILE_DIRS, ROOT,
     find_browser,
 )
-from . import api, audit, config, db, settings as settings_module, storage
+from . import api, audit, config, db, samples, settings as settings_module, storage
 from .broadcast import BroadcastController, BroadcastError
 from .probe import bridge_status, listening, local_get, wait_bridge
 from .relay import SceneRelay
@@ -269,6 +269,11 @@ def make_handler(active_port):
     relay = SceneRelay()
     bridge = _BridgeKeeper()
     broadcast = BroadcastController(relay)
+    # 首次启动把内置示例内容包（含演示人物与头像）落库，保证开箱即用；失败不阻断启动。
+    try:
+        samples.seed_builtin_packs()
+    except Exception:
+        pass
     auto_start_broadcast(broadcast)
     started_at = time.time()
     # bridge_status() 会逐个端口探测（每次最多 1.5s）。控制台 2s 轮询一次，
@@ -385,6 +390,17 @@ def make_handler(active_port):
             if clean.startswith('/media/'):
                 hit = storage.media_path(clean[len('/media/'):])
                 return str(hit) if hit else str(ROOT / '__missing_media__')
+            # 内置演示头像：媒体系统只登记 raster 上传，SVG 走这条只读静态路由。
+            if clean.startswith('/avatars/'):
+                rel = clean[len('/avatars'):].lstrip('/')
+                if not rel.endswith('.svg') or '..' in rel.split('/'):
+                    return str(ROOT / '__forbidden__')
+                target = config.media_dir() / rel
+                try:
+                    target.resolve().relative_to(config.media_dir().resolve())
+                except (ValueError, OSError):
+                    return str(ROOT / '__forbidden__')
+                return str(target) if target.is_file() else str(ROOT / '__missing_media__')
             return super().translate_path(path)
 
         # —— 内容包 API（GET/POST/PUT/DELETE 共用一条 I/O 通道）——
