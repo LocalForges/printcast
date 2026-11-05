@@ -1,6 +1,9 @@
 #!/usr/bin/env node
-// 抖音直播数据桥：从本机浏览器的直播间页面读取弹幕/点赞/礼物，转发给头像打印机。
-// 用法：node live-collector.mjs [房间号] [WS端口]（房间号也可写入 .bridge-room 文件），端口默认 8765
+// 直播数据桥：把直播间的弹幕/点赞/礼物/进场归一化成事件契约 v1，转发给头像打印机。
+// 用法：node live-collector.mjs [房间号] [WS端口] [平台]
+//   平台默认 douyin；generic 表示不驱动浏览器，等外部 POST /ingest 推流。
+//   也可用环境变量 PRINTCAST_PLATFORM 指定（控制台「直播」设置会透传）。
+// 房间号也可写入 .bridge-room 文件；WS 端口默认 8765。
 // CDP 端口优先级（与 findTarget() 代码一致）：自建无头 Chrome(:9223) → BrowserOS neo(:9110) → 已开调试端口的 Chromium(:9222)
 // 页面(http://127.0.0.1:8080)会自动连接 ws://127.0.0.1:8765，无需手动操作。
 import http from 'node:http';
@@ -13,11 +16,15 @@ import {
   parseChatLine, mapGift, isJunkName, normKey, pbDecode, isExplicitAvatarUrl, isAvatarUrl,
   collectUsers, extractUser, diffNew, allocateLikes, eachEnvelope
 } from './parse.mjs';
+import { resolvePlatform } from './platforms/index.mjs';
+import { normalizeEvent, extractEvents, LIMITS } from './platforms/contract.mjs';
 import { COLLECT } from './collect-script.mjs';
 import zlib from 'node:zlib';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOM_RE = /live\.douyin\.com\/(\d+)/;
+// 平台由 --platform / PRINTCAST_PLATFORM 决定；未知值回落默认平台，服务不因配置错误起不来。
+const PLATFORM = resolvePlatform(process.env.PRINTCAST_PLATFORM || process.argv[4]);
+const ROOM_RE = PLATFORM.roomPattern || /live\.douyin\.com\/(\d+)/;
 const CHROME_CANDIDATES = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
@@ -63,7 +70,7 @@ async function openTab(port, url) {
 }
 
 async function findTarget(room) {
-  const roomUrl = 'https://live.douyin.com/' + room;
+  const roomUrl = PLATFORM.roomUrl(room);
   for (const port of (process.env.PRINTER_CDP_PORT ? [Number(process.env.PRINTER_CDP_PORT)] : [9223, 9110, 9222])) {
     let pages;
     try { pages = await listPages(port) } catch { continue }
@@ -91,7 +98,7 @@ async function launchStandaloneChrome(room) {
     '--window-position=120,90', '--window-size=1180,800',
     '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding',
     '--disable-background-timer-throttling', '--disable-features=IntensiveWakeUpThrottling,CalculateNativeWinOcclusion',
-    'https://live.douyin.com/' + room
+    PLATFORM.roomUrl(room)
   ], { detached: true, stdio: 'ignore' }).unref();
   for (let i = 0; i < 50; i++) {
     await sleep(500);
@@ -236,6 +243,35 @@ function feedAvatar(name, avatar, via = '页面') {
     roster.set(name, avatar);
     lastSeen.set(name, Date.now());
   }
+}
+
+// 事件出口（契约 v1）：浏览器采集与通用推流共用同一条通道与同一套记账，
+// 这样「谁在榜上、总数多少、最后一帧多久前」对两种来源口径一致。
+function publishLiveEvent(raw, source) {
+  const ev = normalizeEvent(raw, { platform: PLATFORM.id, source });
+  if (!ev) return null;
+  lastEventAt = Date.now();
+  if (!lastSeen.has(ev.name)) lastSeen.set(ev.name, Date.now());
+  if (ev.avatar) feedAvatar(ev.name, ev.avatar, source === 'ingest' ? '推流头像' : '页面头像');
+  else if (!roster.has(ev.name)) roster.set(ev.name, '');
+  if (ev.type === 'comment') total.comment++;
+  else if (ev.type === 'gift') total.gift++;
+  else if (ev.type === 'like') total.like += ev.count || 1;
+  else if (ev.type === 'join') total.join++;
+  hubRef?.broadcast(ev);
+  return ev;
+}
+
+// /ingest 的业务侧：归一化 + 计数 + 进入打印通道。传输层校验在 bridge-server。
+function ingestEvents(payload, limit = LIMITS.eventsPerRequest) {
+  const list = extractEvents(payload).slice(0, limit);
+  let accepted = 0;
+  const rejected = [];
+  for (const raw of list) {
+    if (publishLiveEvent(raw, 'ingest')) accepted++;
+    else rejected.push(String(raw && raw.type ? raw.type : 'unknown'));
+  }
+  return { accepted, rejected };
 }
 
 // 点赞令牌桶：20 个令牌，每 400ms 回 1 个，单次最多放行 3 个。
@@ -504,10 +540,10 @@ async function run(hub) {
   const { ws, rpc } = await attachCDP(target);
   cdpRef = { ws, rpc };
   if (((target.url || '').match(ROOM_RE) || [])[1] !== currentRoom) {
-    await rpc('Page.navigate', { url: 'https://live.douyin.com/' + currentRoom }).catch(() => { });
+    await rpc('Page.navigate', { url: PLATFORM.roomUrl(currentRoom) }).catch(() => { });
     await sleep(4000);
   }
-  console.log('[' + stamp() + '] 📺 直播间 https://live.douyin.com/' + currentRoom + ' 采集中，每 0.3 秒刷新 + 协议流解码');
+  console.log('[' + stamp() + '] 📺 直播间 ' + PLATFORM.roomUrl(currentRoom) + ' 采集中，每 0.3 秒刷新 + 协议流解码');
   cdpEventSink = m => {
     if (m.method === 'Target.attachedToTarget' && m.params && m.params.sessionId) {
       const sid = m.params.sessionId;
@@ -541,12 +577,12 @@ async function run(hub) {
   ws.onclose = () => fail(new Error('CDP closed'));
 
   function emit(ev) {
-    lastEventAt = Date.now();
-    hub.broadcast(ev);
-    if (ev.type === 'comment') { total.comment++; console.log('[' + stamp() + '] 💬 %s：%s%s', ev.name, ev.text || '', ev.avatar ? ' 🪪' : ' △无头像') }
-    else if (ev.type === 'gift') { total.gift++; console.log('[' + stamp() + '] 🎁 %s 送出 %s x%d → %s', ev.name, ev.raw, ev.count, ev.gift) }
-    else if (ev.type === 'like') { total.like += ev.count; console.log('[' + stamp() + '] ❤️ %s 点赞 +%d%s', ev.name, ev.count, ev.avatar ? '（带头像）' : '') }
-    else if (ev.type === 'join') { total.join++; console.log('[' + stamp() + '] 👋 %s 进入直播间', ev.name) }
+    const out = publishLiveEvent(ev, 'browser');
+    if (!out) return;
+    if (out.type === 'comment') console.log('[' + stamp() + '] 💬 %s：%s%s', out.name, out.text || '', out.avatar ? ' 🪪' : ' △无头像');
+    else if (out.type === 'gift') console.log('[' + stamp() + '] 🎁 %s 送出 %s x%d → %s', out.name, out.raw, out.count, out.gift);
+    else if (out.type === 'like') console.log('[' + stamp() + '] ❤️ %s 点赞 +%d%s', out.name, out.count, out.avatar ? '（带头像）' : '');
+    else if (out.type === 'join') console.log('[' + stamp() + '] 👋 %s 进入直播间', out.name);
   }
 
   let commentResolution = Promise.resolve();
@@ -634,7 +670,7 @@ async function run(hub) {
       if (r && r.result && r.result.value) {
         const s = r.result.value;
         // Leave login / verification pages alone; only an explicit room switch navigates.
-        if (s.href && !s.href.includes('live.douyin.com/' + currentRoom)) return;
+        if (s.href && PLATFORM.hostHint && !s.href.includes(PLATFORM.hostHint + '/' + currentRoom)) return;
         if (!chatSeen && (s.lines.length || s.likes != null)) {
           chatSeen = true;
           console.log('[' + stamp() + '] ✅ 已读到直播数据：弹幕 %d 条，点赞计数 %s', s.lines.length, s.likes);
@@ -678,40 +714,80 @@ function applyRoom(room, persist) {
   console.log('[' + stamp() + '] 📺 切换直播间 → ' + room);
   resetRoomState();
   hubRef?.broadcast({ type: 'hello', room, people: [] });
-  if (cdpRef) cdpRef.rpc('Page.navigate', { url: 'https://live.douyin.com/' + room }).catch(() => { });
+  const url = PLATFORM.roomUrl(room);
+  if (cdpRef && url) cdpRef.rpc('Page.navigate', { url }).catch(() => { });
+}
+
+// 通用推流模式的常驻心跳：形状与浏览器模式一致（hello/ping + 榜单 + 统计），
+// 让打印台与控制台无需区分来源就能显示「桥活着 / 最近一帧多久前」。
+function startHeartbeat(hub) {
+  setInterval(() => {
+    if (!hub.clientCount()) return;
+    const people = [...roster.entries()]
+      .sort((a, b) => Number(!!b[1]) - Number(!!a[1]))
+      .slice(0, 8).map(([name, avatar]) => ({ name, avatar }));
+    hub.broadcast({
+      type: 'ping', v: 1, platform: PLATFORM.id, room: currentRoom, ts: Date.now(), people,
+      stats: {
+        comment: total.comment, like: total.like, gift: total.gift, join: total.join,
+        lastAgo: lastEventAt ? Date.now() - lastEventAt : null, roster: roster.size,
+      },
+    });
+  }, 2000).unref?.();
 }
 
 async function main() {
-  const argRoom = (process.argv[2] || '').replace(/\D/g, '');
+  const argRoom = PLATFORM.parseRoom(process.argv[2] || '');
   let fileRoom = '';
-  try { fileRoom = ((fs.readFileSync(path.join(__dirname, '.bridge-room'), 'utf8').match(/(\d{5,25})/)) || [])[1] || '' } catch { }
+  try { fileRoom = PLATFORM.parseRoom(fs.readFileSync(path.join(__dirname, '.bridge-room'), 'utf8')) } catch { }
   currentRoom = argRoom || fileRoom || currentRoom;
-  if (!currentRoom) { console.error('请提供直播间号：node live-collector.mjs 房间号（也可写入 .bridge-room 文件，或在打印程序里切换房间）'); process.exit(1); }
+  if (PLATFORM.needsRoom && !currentRoom) { console.error('请提供直播间号：node live-collector.mjs 房间号（也可写入 .bridge-room 文件，或在打印程序里切换房间）'); process.exit(1); }
   loadAvatarCache();
   setInterval(saveAvatarCache, 30000).unref?.();
   process.on('exit', saveAvatarCache);
   // 自动跟随 .bridge-room：应用重开别的直播窗口或手改文件，无需重启数据桥。
-  setInterval(() => {
-    let fileRoom = '';
-    try { fileRoom = ((fs.readFileSync(path.join(__dirname, '.bridge-room'), 'utf8').match(/(\d{5,25})/)) || [])[1] || '' } catch { }
-    if (fileRoom && fileRoom !== currentRoom) applyRoom(fileRoom, false);
+  if (PLATFORM.needsRoom) setInterval(() => {
+    let next = '';
+    try { next = PLATFORM.parseRoom(fs.readFileSync(path.join(__dirname, '.bridge-room'), 'utf8')) } catch { }
+    if (next && next !== currentRoom) applyRoom(next, false);
   }, 2000).unref?.();
   const wsPort = Number(process.argv[3]) || 8765;
   const hub = startWSServer(wsPort, {
-    identity: __dirname, fallbackPorts: process.argv[3] ? 0 : 9,
+    // identity 必须是**仓库根**：探测端（printcast.probe.bridge_status）拿它与 ROOT 比对，
+    // 用来区分「本仓库起的桥」和「其它目录起的桥」。早期这里上报 __dirname（src/collector），
+    // 与 ROOT 永不相等，导致控制台一直显示「数据桥未启动」并把成功启动误报成超时。
+    identity: path.resolve(__dirname, '..', '..'), fallbackPorts: process.argv[3] ? 0 : 9,
     onStatus: p => console.log('[' + stamp() + '] ✅ 数据桥服务 ws://127.0.0.1:' + p + '（等待打印页面接入）'),
     onError: err => {
       console.error('[' + stamp() + '] ❌ 端口 ' + wsPort + ' 启动失败（' + err.code + '），可能有另一个数据桥在运行，本实例退出');
       process.exit(1);
     },
+    // 通用推流入口：外部平台脚本 POST /ingest，事件与浏览器采集走同一条通道。
+    onIngest: payload => ingestEvents(payload),
+    // /health 附带平台与统计，控制台状态条据此显示「采集源 / 最近一帧多久前」。
+    onHealth: () => ({
+      platform: PLATFORM.id,
+      room: currentRoom,
+      stats: {
+        comment: total.comment, like: total.like, gift: total.gift, join: total.join,
+        lastAgo: lastEventAt ? Date.now() - lastEventAt : null, roster: roster.size,
+      },
+    }),
     onMessage: raw => {
       let m; try { m = JSON.parse(raw) } catch { return }
       if (m.type !== 'set-room') return;
-      const id = String(m.room || '').match(/(\d{5,25})/);
+      const id = PLATFORM.parseRoom(m.room);
       if (!id) return;
-      applyRoom(id[1], true);
+      applyRoom(id, true);
     }
   });
+  hubRef = hub;
+  if (!PLATFORM.needsBrowser) {
+    console.log('[' + stamp() + '] 🔌 ' + PLATFORM.label + '模式：不驱动浏览器，等待外部推流 POST http://127.0.0.1:' + wsPort + '/ingest');
+    console.log('[' + stamp() + ']    事件契约：{type: comment|gift|like|join|follow, name, text?, gift?, count?, avatar?}');
+    startHeartbeat(hub);
+    return;
+  }
   console.log('房间号 ' + currentRoom + '。正在弹出直播间窗口（可在里面登录抖音）；来源优先级：自建窗口(:9223) → BrowserOS(:9110) → 调试Chromium(:9222)');
   try { await run(hub) } catch (e) {
     console.error('[' + stamp() + '] ❌ ' + e.message);

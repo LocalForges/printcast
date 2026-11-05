@@ -283,8 +283,8 @@ box(1.58,.055,.72,0,.726,.005,porcelain,g);box(1.7,.035,.8,0,.572,0,porcelain,g)
 let labelTex=texture(1024,420,(c,w,h)=>{c.fillStyle=tier===2?'#242a2b':'#f5efe3';c.fillRect(0,0,w,h);c.fillStyle=tier===2?'#fff4dc':'#181b1b';c.textAlign='center';const name=v.name;let font=94;do{c.font='800 '+font+'px "Microsoft YaHei",sans-serif';if(c.measureText(name).width<w-60)break;font-=2}while(font>28);c.fillText(name,w/2,119);c.globalAlpha=.3;c.fillRect(44,148,w-88,3);c.globalAlpha=1;c.font='900 194px "Microsoft YaHei",sans-serif';c.fillText(v.score+' pts',w/2,345)});labelTex.anisotropy=renderer.capabilities.getMaxAnisotropy();let label=mesh(new THREE.PlaneGeometry(1.46,.58),new THREE.MeshStandardMaterial({map:labelTex,roughness:.42,metalness:.05,clippingPlanes:[plane]}),g);label.position.set(0,.95,.325);label.rotation.x=-.16;
 let entry={g,plane,avatarMat,labelTex,glint,glintAge:null,disposed:false};const applyAvatar=tex=>{if(entry.disposed){tex.dispose();return}tex.colorSpace=THREE.SRGBColorSpace;tex.anisotropy=renderer.capabilities.getMaxAnisotropy();tex.minFilter=THREE.LinearMipmapLinearFilter;tex.magFilter=THREE.LinearFilter;tex.generateMipmaps=true;avatarMat.map=tex;avatarMat.emissiveMap=tex;avatarMat.color.set('#ffffff');avatarMat.needsUpdate=true};new THREE.TextureLoader().load(v.avatar||fallbackAvatar(v.name),applyAvatar,undefined,()=>{ if(v.avatar){markMissingAsset(v.avatar)} new THREE.TextureLoader().load(fallbackAvatar(v.name),applyAvatar)});return entry}
 function disposeProduct(p){p.disposed=true;p.g.removeFromParent();p.g.traverse(o=>{if(o.isMesh||o.isLineSegments){o.geometry.dispose();if(o.material.map&&o.material.map!==wood&&o.material.map!==grain)o.material.map.dispose();o.material.dispose()}})}
-let autoDemo=true;let lastDemoFill=0;function replenishDemo(force){if(!autoDemo||paused||busy||queue.length||!demoPeople.length)return;if(pcSettings&&pcSettings.live&&pcSettings.live.demoFill===false)return;const demoGap=Number(printRules.demoGapMs);if(!force&&(demoGap===0||(lastDemoFill&&Date.now()-lastDemoFill<demoGap)))return;lastDemoFill=Date.now();const person=randomPerson();queue.push({...person,size:Math.random()<.3?'large':'small',priority:false,source:'auto demo',copy:1,total:1});renderQueue();updateScreen()}
-function idleTestFill(){if(!printRules.idleFill||paused||!demoPeople.length||queue.length>=2||Date.now()-lastLiveMsgAt<printRules.idleSeconds*1000)return;if(pcSettings&&pcSettings.live&&pcSettings.live.demoFill===false)return;lastLiveMsgAt=Date.now();liveEvent('like',randomPerson(),1,null,'30s idle · test avatar',false)}
+let autoDemo=true;let lastDemoFill=0;function replenishDemo(force){if(!autoDemo||paused||busy||queue.length||!demoPeople.length)return;if(typeof pcSettings!=='undefined'&&pcSettings&&pcSettings.live&&pcSettings.live.demoFill===false)return;const demoGap=Number(printRules.demoGapMs);if(!force&&(demoGap===0||(lastDemoFill&&Date.now()-lastDemoFill<demoGap)))return;lastDemoFill=Date.now();const person=randomPerson();queue.push({...person,size:Math.random()<.3?'large':'small',priority:false,source:'auto demo',copy:1,total:1});renderQueue();updateScreen()}
+function idleTestFill(){if(!printRules.idleFill||paused||!demoPeople.length||queue.length>=2||Date.now()-lastLiveMsgAt<printRules.idleSeconds*1000)return;if(typeof pcSettings!=='undefined'&&pcSettings&&pcSettings.live&&pcSettings.live.demoFill===false)return;lastLiveMsgAt=Date.now();liveEvent('like',randomPerson(),1,null,'30s idle · test avatar',false)}
 function preemptForGift(){
  if(paused||!busy||active?.priority||!queue[0]?.priority)return;
  if(phase==='printing'){
@@ -413,7 +413,7 @@ async function connectBridge(){if(bridgeConnecting||(socket&&socket.readyState<=
 const demoNames=['Orange Soda','Star Student','Cream Bear','Mint Latte','Blueberry Pudding','Peach Oolong','Happy Corgi','Moon Night','Bayberry','Coconut Bubble','Cheese Taro','Caramel Macchiato','Soda Bean','Energy Pudding','Watermelon','Milk Cap 13','Yuzu Tea','Tofu Box','Mochi','Egg Tart Guy','Gummy Aunt','Sparkling Water','Chestnut','Sticky Rice'];
 function testAvatar(i){const c=document.createElement('canvas');c.width=c.height=256;const x=c.getContext('2d');const colors=['#ffb284','#a9b8f4','#d8b992','#91cbb1','#ba9ee0','#efa8b9','#e6bc6a','#89b9cd','#f4a4a4','#9fd6a8','#d9c2f0','#f0d9a8','#a8d9d4','#f4b8d8','#c4d98a','#e0a8c4'];x.fillStyle=colors[i%colors.length];x.fillRect(0,0,256,256);x.fillStyle='#ffffff30';for(let k=0;k<6;k++){x.beginPath();x.arc(k*58-12,k%2?30:225,35,0,Math.PI*2);x.fill()}const animal=i%3!==1;x.fillStyle=animal?'#fff1da':'#423b51';for(const xx of [76,180]){x.beginPath();x.arc(xx,77,animal?30:24,0,Math.PI*2);x.fill()}x.fillStyle=animal?'#fff1da':'#f6d4bd';x.beginPath();x.ellipse(128,134,78,83,0,0,Math.PI*2);x.fill();x.fillStyle='#353342';for(const xx of [101,155]){x.beginPath();x.ellipse(xx,127,7,10,0,0,Math.PI*2);x.fill()}x.fillStyle='#eea193';for(const xx of [82,174]){x.beginPath();x.ellipse(xx,151,14,8,0,0,Math.PI*2);x.fill()}x.strokeStyle='#57424a';x.lineWidth=5;x.lineCap='round';x.beginPath();x.arc(128,149,18,0.15,Math.PI-.15);x.stroke();if(i%2===0){x.fillStyle='#8d624c';x.beginPath();x.ellipse(128,146,8,6,0,0,Math.PI*2);x.fill()}return c.toDataURL('image/png')}
 let demoPeople=demoNames.map((name,i)=>({name,avatar:testAvatar(i)}));
-setTimeout(()=>{if(liveEverConnected)return;if(pcSettings&&pcSettings.live&&pcSettings.live.demoFill===false)return;const s0=[...demoPeople];for(let i=s0.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[s0[i],s0[j]]=[s0[j],s0[i]]}s0.slice(0,6).forEach(p=>liveEvent('like',p,1,null,'demo',false))},0);
+setTimeout(()=>{if(liveEverConnected)return;if(typeof pcSettings!=='undefined'&&pcSettings&&pcSettings.live&&pcSettings.live.demoFill===false)return;const s0=[...demoPeople];for(let i=s0.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[s0[i],s0[j]]=[s0[j],s0[i]]}s0.slice(0,6).forEach(p=>liveEvent('like',p,1,null,'demo',false))},0);
 $('demo').textContent='More demo avatars';$('demo').onclick=()=>updateScreen();
 updateScreen();
 $('toggle').onclick=()=>{paused=!paused;machineAudio.cue(paused?'pause':'resume');$('toggle').textContent=paused?'Resume printing':'Pause printing';if(!paused)next()};$('skip').onclick=()=>{machineAudio.cue('skip');if(currentProduct){const i=products.indexOf(currentProduct);if(i>=0)products.splice(i,1);disposeProduct(currentProduct)}currentProduct=null;transferState=null;articulateArm();active=null;busy=false;phase='idle';next()};// Explicit opt-in required by browser audio policies.
@@ -465,10 +465,10 @@ for(const [key,value] of Object.entries(PRINT_DEFAULTS)){if(printRules[key]===un
 // The console is the only authority: printer.* / broadcast.scriptedPrint / live.* override local defaults.
 async function refreshConsoleSettings(){
   try{
-    const r = await fetch('/__api/settings', (window.AbortSignal&&AbortSignal.timeout)?{signal:AbortSignal.timeout(3000)}:undefined);
-    if(!r.ok) return;
-    const d = await r.json();
-    const s = (d && d.settings) || null;
+    // 统一走 settings-loader：首屏复用 ready，之后 reload 重取并应用品牌层。
+    // 展示端不直连 fetch，保证「配置只有一个入口」。
+    if(!window.__PC) return;
+    const s = await (window.__PC.reload ? window.__PC.reload() : window.__PC.ready);
     if(!s) return;
     pcSettings = s;
     const p = s.printer || {};
@@ -484,7 +484,7 @@ async function refreshConsoleSettings(){
     if(ri){
       if(live.defaultRoom&&!ri.value) ri.value=live.defaultRoom;
       ri.setAttribute('data-room-input','');
-      ri.placeholder=live.platform==='other'?'Room ID or live link':'Douyin room ID or link, press Enter';
+      ri.placeholder=live.platform==='generic'?'Generic push mode: room optional':'Douyin room ID or link, press Enter';
     }
     const host=$('print-rules-body');
     if(host){ renderPrintSettings(host,printRules,()=>{}); host.querySelectorAll('input,select').forEach(el=>{el.disabled=true}); }
@@ -495,7 +495,9 @@ async function refreshConsoleSettings(){
   }catch(e){}
 }
 refreshConsoleSettings();
-setInterval(refreshConsoleSettings,5000);
+// 轮询只在页面可见时跑：OBS/投屏常驻后台时不必空转；切回前台立即补一次。
+setInterval(()=>{ if(!document.hidden) refreshConsoleSettings(); },5000);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshConsoleSettings(); });
 // —— M1: route broadcast view-appearance events into the 3D print queue ("print whoever is on screen"). ——
 let appearanceCursor=null; const appearanceClient='renderer-'+Math.random().toString(36).slice(2,10);
 function enqueueAppearance(ap){
@@ -512,7 +514,13 @@ async function appearanceTick(){
   try{
     const r=await fetch('/__scene-events?client='+appearanceClient+(appearanceCursor===null?'':'&after='+appearanceCursor));
     const d=await r.json(); appearanceCursor=d.cursor;
-    for(const m of (d.messages||[])){ if(m.type==='view-appearance'&&m.appearance) enqueueAppearance(m.appearance); }
+    let needSettings=false;
+    for(const m of (d.messages||[])){
+      if(m.type==='view-appearance'&&m.appearance) enqueueAppearance(m.appearance);
+      else if(m.type==='settings-changed') needSettings=true;
+    }
+    // 控制台一保存就推送信令：立即重读，不必等 5s 轮询（轮询保留为兜底）。
+    if(needSettings) refreshConsoleSettings();
   }catch(e){}
   appearanceTimer=setTimeout(appearanceTick,600);
 }

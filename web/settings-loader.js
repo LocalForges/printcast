@@ -97,8 +97,25 @@
     }
   }
 
-  var pc = { settings: null, ready: null, apply: apply };
+  var pc = { settings: null, ready: null, apply: apply, reload: reload };
   window.__PC = pc;
+
+  // 重新拉取并应用：控制台保存后由调用方触发（或收到 settings-changed 信令时）。
+  // 只有这里能 fetch 设置，渲染模块不再各自直连，避免出现「有的端用了设置、有的端没用」。
+  function reload() {
+    var o = {};
+    if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
+      try { o.signal = AbortSignal.timeout(4000); } catch (e) {}
+    }
+    return fetch('/__api/settings', o)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        var s = (d && d.settings) || null;
+        if (s) { pc.settings = s; apply(s); }
+        return s;
+      })
+      .catch(function () { return null; });
+  }
 
   // 脚本挂在 <head>：本地服务可能比 HTML 解析更快返回，必须等 DOM 就绪再绑定。
   var domReady = new Promise(function (resolve) {

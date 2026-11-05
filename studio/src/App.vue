@@ -133,6 +133,39 @@ const lights = computed(() => [
 ]);
 const currentChar = computed(() => bcState.value.current || null);
 const counts = computed(() => (status.value && status.value.counts) || { packs: packs.value.length, media: media.value.length });
+
+// —— 采集源状态条 ——
+// capture 由后端 /__api/status 聚合：以「桥自报在跑的平台」为准，configured 是设置里的期望值。
+const capture = computed(() => (status.value && status.value.capture) || {});
+const bridgeOn = computed(() => !!(status.value && status.value.bridge && status.value.bridge.ok));
+const PLATFORM_LABELS = { douyin: '抖音', generic: '通用推流' };
+function platformLabel(id) { return PLATFORM_LABELS[id] || id || '未设置'; }
+const captureLag = computed(() => {
+  const stats = status.value && status.value.bridge && status.value.bridge.stats;
+  if (!stats || stats.lastAgo === null || stats.lastAgo === undefined) return '';
+  const sec = Math.round(Number(stats.lastAgo) / 1000);
+  return sec < 0 ? '' : (sec < 60 ? sec + 's 前有新事件' : Math.round(sec / 60) + ' 分钟前');
+});
+// 采集平台与设置不一致时提示：桥是漂着的旧进程，改完设置要重启桥才生效。
+const captureMismatch = computed(() => {
+  const running = capture.value.platform;
+  const configured = capture.value.configured;
+  return !!(bridgeOn.value && running && configured && running !== configured);
+});
+const progressText = computed(() => {
+  const p = bcState.value.progress;
+  if (!p || !bcState.value.active) return '';
+  const total = p.total || 0;
+  if (!total) return '';
+  const cycle = p.cycle ? '（第 ' + (p.cycle + 1) + ' 轮）' : '';
+  return '第 ' + (p.position || 0) + ' / ' + total + ' 位' + cycle;
+});
+
+// 当前角色头像：加载失败回退首字（与展示端同一条降级逻辑），换人时重置失败标记。
+const avatarBroken = ref(false);
+const currentAvatar = computed(() => (avatarBroken.value ? null : charAvatar(currentChar.value)));
+watch(() => (currentChar.value && (currentChar.value.id || currentChar.value.name)) || '', () => { avatarBroken.value = false; });
+
 const runtimeText = computed(() => {
   const started = bcState.value.startedAt;
   if (!started) return '';
@@ -276,8 +309,11 @@ function editTags(c) {
 }
 function charAvatar(c) {
   const a = c && c.avatar;
-  return typeof a === 'string' && /^[a-f0-9]{12}\.(png|jpe?g|webp)$/.test(a)
-    ? '/media/' + a : null;
+  if (typeof a !== 'string' || !a) return null;
+  // 与展示端 mediaUrl 保持同一套口径：绝对地址原样、SVG 走 /avatars/、raster 走 /media/。
+  if (/^https?:\/\//i.test(a) || a.charAt(0) === '/') return a;
+  if (/^[a-z0-9._-]+\.svg$/i.test(a)) return '/avatars/' + a;
+  return /^[a-f0-9]{12}\.(png|jpe?g|webp)$/.test(a) ? '/media/' + a : null;
 }
 function tagsText(c) {
   const t = c && c.tags;
@@ -701,14 +737,25 @@ async function openLiveWindow() {
   catch (e) { flash('打开直播小窗失败：' + e.message, true); }
 }
 async function toggleBridge() {
-  const running = status.value && status.value.bridge && status.value.bridge.ok;
+  const running = bridgeOn.value;
   const room = settings.value && settings.value.live && settings.value.live.defaultRoom;
+  const platform = (settings.value && settings.value.live && settings.value.live.platform) || 'douyin';
   try {
     if (running) await api.stopBridge();
-    else await api.startBridge(room || undefined);
+    else await api.startBridge(room || undefined, platform);
     await Promise.all([refreshStatus(), loadAudit()]);
-    flash(running ? '数据桥已停止' : '数据桥已启动');
+    flash(running ? '数据桥已停止' : ('数据桥已启动（' + platformLabel(platform) + '）'));
   } catch (e) { flash('数据桥操作失败：' + e.message, true); }
+}
+
+// 内容包里「打这个」：直接点名出场，省掉「回内容源面板 → 手输角色 ID」四步。
+async function triggerChar(charId) {
+  if (!bcState.value.active) { flash('需先开始剧本播放，才能点名出场', true); return; }
+  try {
+    await api.broadcast('trigger', { charId });
+    await Promise.all([refreshStatus(), loadAudit()]);
+    flash('已点名出场：' + charId);
+  } catch (e) { flash('点名失败：' + e.message, true); }
 }
 
 function ruleLabel(k) {
@@ -865,16 +912,35 @@ onUnmounted(() => {
 
         <!-- ============ 总览 ============ -->
         <template v-if="activeView === 'overview'">
+          <!-- 状态条：四件「现在能不能用」的事，一眼看完；采集那块点一下就能启停桥。 -->
+          <section class="status-bar">
+            <span class="status-chip" :class="status ? 'ok' : 'bad'"><i></i>本机服务 {{ status ? 'HTTP ' + status.service.port : '未连接' }}</span>
+            <button class="status-chip" :class="bridgeOn ? 'ok' : 'mute'" @click="toggleBridge"
+                    :title="bridgeOn ? '点击停止数据桥' : '点击启动数据桥'">
+              <i></i>采集 · {{ bridgeOn ? platformLabel(capture.platform) : '未启动' }}<template v-if="bridgeOn && captureLag"> · {{ captureLag }}</template>
+            </button>
+            <span class="status-chip" :class="bcState.active ? (bcPlaying ? 'ok' : 'warn') : 'mute'"><i></i>剧本 · {{ bcState.active ? (bcPlaying ? '自动播放 ' + Math.round((bcState.intervalMs || 0) / 1000) + 's' : '已暂停') : '待机' }}</span>
+            <span class="status-chip" :class="settings && settings.broadcast && settings.broadcast.scriptedPrint ? 'ok' : 'mute'"><i></i>3D 打印 · {{ settings && settings.broadcast && settings.broadcast.scriptedPrint ? '剧本已接入' : '仅字幕' }}</span>
+            <span v-if="captureMismatch" class="status-chip warn" title="设置里的平台与正在运行的桥不一致：重启数据桥后生效"><i></i>平台待重启</span>
+          </section>
+
           <section class="card hero">
             <div class="hero-main">
-              <div class="avatar">{{ currentChar ? (currentChar.name || '?').slice(0, 1) : '—' }}</div>
+              <div class="avatar">
+                <img v-if="currentAvatar" :src="currentAvatar" :alt="currentChar && currentChar.name" @error="avatarBroken = true" />
+                <template v-else>{{ currentChar ? (currentChar.name || '?').slice(0, 1) : '—' }}</template>
+              </div>
               <div class="hero-text">
                 <div class="eyebrow">现在正在打印<span v-if="runtimeText"> · 已运行 {{ runtimeText }}</span></div>
                 <div class="hero-title">{{ currentChar ? (currentChar.name || currentChar.id || '未知角色') : '尚未开播' }}</div>
                 <div class="muted" v-if="bcState.active">
-                  {{ (bcState.packIds || []).join(' / ') }} · 第 {{ bcState.seq || 0 }} 位 · 模式 {{ bcState.mode }}
+                  {{ (bcState.packIds || []).join(' / ') }} · 第 {{ bcState.seq || 0 }} 位 · 模式 {{ bcState.mode }}<template v-if="progressText"> · {{ progressText }}</template>
                 </div>
                 <div class="muted" v-else>在上方选好内容包后点「开始剧本播放」。</div>
+                <div class="hero-speech" v-if="currentChar && currentChar.speech">{{ currentChar.speech }}</div>
+                <div class="hero-tags" v-if="currentChar && currentChar.tags && currentChar.tags.length">
+                  <span class="hero-tag" v-for="t in currentChar.tags" :key="t">{{ t }}</span>
+                </div>
               </div>
             </div>
             <div class="hero-actions">
@@ -920,9 +986,38 @@ onUnmounted(() => {
                 </div>
               </template>
               <template v-else>
-                <button class="btn primary" @click="toggleBridge">{{ status && status.bridge && status.bridge.ok ? '停止数据桥' : '启动数据桥' }}</button>
-                <span class="muted">直播由数据桥从直播间抓取弹幕 / 礼物，实时驱动打印。</span>
-                <a class="link" :href="'/web/index.html?room=' + ((settings&&settings.live&&settings.live.defaultRoom)||'')" target="_blank">打开直播抓取窗口 ↗</a>
+                <div v-if="!settings" class="empty">正在读取控制台设置…</div>
+                <template v-else>
+                <div class="row">
+                  <label>采集平台
+                    <select v-model="settings.live.platform" @change="saveSettings()">
+                      <option value="douyin">抖音（浏览器采集）</option>
+                      <option value="generic">通用推流（外部脚本 POST）</option>
+                    </select>
+                  </label>
+                  <button class="btn primary" @click="toggleBridge">{{ bridgeOn ? '停止数据桥' : '启动数据桥' }}</button>
+                  <a v-if="settings.live.platform !== 'generic'" class="link"
+                     :href="'/web/index.html?room=' + (settings.live.defaultRoom || '')" target="_blank">打开直播抓取窗口 ↗</a>
+                </div>
+                <div class="state-line">
+                  <span :class="bridgeOn ? 'tag ok' : 'tag mute'">{{ bridgeOn ? '采集中 · ' + platformLabel(capture.platform) : '未启动' }}</span>
+                  <span class="muted" v-if="bridgeOn && captureLag">{{ captureLag }}</span>
+                  <span class="muted" v-if="captureMismatch">设置已改为 {{ platformLabel(capture.configured) }}，重启数据桥后生效</span>
+                </div>
+                <!-- 通用推流：给出可直接复制的地址与示例，任何平台按契约 v1 POST 即可接入。 -->
+                <div v-if="settings && settings.live.platform === 'generic'" class="ingest-hint">
+                  <p class="muted">外部脚本按事件契约 <code>v1</code> POST 到下面地址，即可驱动同一台打印机（B 站 / 快手 / 自建弹幕源通用）：</p>
+                  <code class="ingest-url">{{ capture.ingestUrl || 'http://127.0.0.1:8765/ingest（启动数据桥后可用）' }}</code>
+                  <pre class="ingest-cmd">curl -s {{ capture.ingestUrl || 'http://127.0.0.1:8765/ingest' }} \
+  -H 'content-type: application/json' \
+  -d '{"type":"comment","name":"小明","text":"打印我"}'</pre>
+                  <details class="ingest-fields">
+                    <summary>字段说明（契约 v1）</summary>
+                    <p class="muted">type：comment / gift / like / join / follow；name：必填 1–24 字；comment 需 text；gift 可带 gift（beer/lollipop/heart/other）与 count；avatar 仅接受 http(s) 地址。单次最多 50 条，请求体 ≤ 64KB。</p>
+                  </details>
+                </div>
+                <label class="switch"><input type="checkbox" v-model="settings.live.demoFill" @change="saveSettings()" /><span class="track"></span>无采集时用演示人物填充</label>
+                </template>
               </template>
             </div>
           </section>
@@ -962,6 +1057,9 @@ onUnmounted(() => {
           <div class="two-col">
             <section class="card">
               <div class="card-head"><h2>打印规则</h2><span class="muted">从「控制台设置」搬来，直接在此调整</span></div>
+              <!-- 设置加载完成前不渲染控件：v-model 直接挂在 null 上会在首帧抛错。 -->
+              <div v-if="!settings" class="empty">正在读取控制台设置…</div>
+              <template v-else>
               <div class="checks">
                 <label class="switch" v-for="k in ['comment','join','like','follow','gift','giftVoice','joinVoice']" :key="k"><input type="checkbox" v-model="settings.printer.rules[k]" /><span class="track"></span>{{ ruleLabel(k) }}</label>
               </div>
@@ -972,6 +1070,7 @@ onUnmounted(() => {
                 <label>空闲阈值 (秒)<input type="number" v-model.number="settings.printer.idleSeconds" min="0" /></label>
               </div>
               <button class="btn small" :disabled="!settingsDirty" @click="saveSettings">保存打印规则</button>
+              </template>
             </section>
             <section class="card">
               <div class="card-head"><h2>打印台实时画面</h2><span class="muted">只读预览 · 与展示端同一画面</span></div>
@@ -1207,7 +1306,7 @@ onUnmounted(() => {
             <section class="card group">
               <button class="group-head" @click="openGroups.live = !openGroups.live"><span>直播</span><span class="muted">{{ openGroups.live ? '收起' : '展开' }}</span></button>
               <div v-if="openGroups.live" class="group-body">
-                <div class="row"><label>默认直播间号<input v-model="settings.live.defaultRoom" placeholder="留空则手动输入" /></label><label>平台<select v-model="settings.live.platform"><option value="douyin">抖音</option><option value="other">其它</option></select></label></div>
+                <div class="row"><label>默认直播间号<input v-model="settings.live.defaultRoom" placeholder="通用推流模式可留空" /></label><label>采集平台<select v-model="settings.live.platform"><option value="douyin">抖音（浏览器采集）</option><option value="generic">通用推流（外部 POST）</option></select></label></div>
                 <div class="row">
                   <label class="switch"><input type="checkbox" v-model="settings.live.demoFill" /><span class="track"></span>未接采集时用演示人物填充</label>
                   <span class="muted">开启后，没有真实直播间连接时自动用内置「演示人物」出场，开箱即看到效果。</span>
@@ -1378,7 +1477,7 @@ onUnmounted(() => {
             </div>
           </div>
           <table class="char-table">
-            <thead><tr><th>头像</th><th>ID / 名称</th><th>顺序 / 权重</th><th>标签</th><th>台词</th><th v-if="drawer.mode === 'edit'"></th></tr></thead>
+            <thead><tr><th>头像</th><th>ID / 名称</th><th>顺序 / 权重</th><th>标签</th><th>台词</th><th class="nowrap">立即打印</th><th v-if="drawer.mode === 'edit'"></th></tr></thead>
             <tbody>
               <tr v-for="(c, i) in drawer.draft.characters" :key="i">
                 <td>
@@ -1406,6 +1505,11 @@ onUnmounted(() => {
                 <td>
                   <textarea v-if="drawer.mode === 'edit'" v-model="c.speech" rows="2"></textarea>
                   <span v-else class="muted speech-cell">{{ c.speech || '—' }}</span>
+                </td>
+                <td class="nowrap">
+                  <button class="btn ghost tiny" :disabled="!bcState.active"
+                          :title="bcState.active ? '立即让这个角色出场打印' : '需先开始剧本播放'"
+                          @click="triggerChar(c.id)">打这个</button>
                 </td>
                 <td v-if="drawer.mode === 'edit'" class="nowrap">
                   <button class="btn ghost tiny" :disabled="i === 0" @click="moveCharacter(i, -1)">↑</button>
@@ -1497,7 +1601,36 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .hero { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding: 20px 22px; }
 .hero-main { display: flex; align-items: center; gap: 16px; min-width: 260px; flex: 1; }
 .avatar { width: 54px; height: 54px; flex: 0 0 54px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--accent-soft); color: var(--accent); font-size: 20px; }
+  background: var(--accent-soft); color: var(--accent); font-size: 20px; overflow: hidden; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hero-speech { margin-top: 6px; font-size: 12.5px; color: var(--text); opacity: .85; max-width: 62ch; line-height: 1.55; }
+.hero-tags { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+.hero-tag { font-size: 11px; padding: 1px 8px; border-radius: 99px; background: var(--surface-2); color: var(--muted); }
+
+/* 状态条：四件「现在能不能用」的事，横向一排；窄屏自动换行。 */
+.status-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.status-chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; font-size: 12px;
+  border-radius: 99px; border: 1px solid var(--border); background: var(--surface-2); color: var(--muted);
+  font-family: inherit; cursor: default; }
+button.status-chip { cursor: pointer; }
+button.status-chip:hover { border-color: var(--accent); color: var(--text); }
+.status-chip i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .55; }
+.status-chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
+.status-chip.ok i { opacity: 1; }
+.status-chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.status-chip.warn i { opacity: 1; }
+.status-chip.bad { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.status-chip.bad i { opacity: 1; }
+.status-chip.mute i { opacity: .35; }
+
+/* 通用推流：地址与示例直接可复制，不逼用户去翻文档。 */
+.ingest-hint { margin: 10px 0; display: flex; flex-direction: column; gap: 8px; }
+.ingest-url { display: block; padding: 8px 10px; border-radius: 8px; background: var(--surface-2);
+  border: 1px solid var(--border); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  word-break: break-all; user-select: all; }
+.ingest-cmd { margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--surface-2);
+  border: 1px solid var(--border); font-size: 11.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
+.ingest-fields summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .eyebrow { font-size: 12px; color: var(--muted); }
 .hero-title { font-size: 20px; font-weight: 600; line-height: 1.35; }
 .hero-actions { display: flex; gap: 7px; flex-wrap: wrap; }

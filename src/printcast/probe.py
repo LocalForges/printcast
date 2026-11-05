@@ -32,14 +32,22 @@ def bridge_status():
                 data = json.load(response)
             if (data.get('service') == 'avatar-printer'
                     and _norm(data.get('identity', '')) == _norm(str(ROOT))):
-                return dict(ok=True, port=port, url=f'ws://127.0.0.1:{port}')
+                return dict(ok=True, port=port, url=f'ws://127.0.0.1:{port}',
+                            # 采集器自报的平台与统计；老版本桥没有这些字段，缺省为空。
+                            platform=str(data.get('platform') or ''),
+                            room=str(data.get('room') or ''),
+                            stats=data.get('stats') if isinstance(data.get('stats'), dict) else {})
         except Exception:
             pass
     return dict(ok=False)
 
 
-def wait_bridge(process, timeout_s=3.0):
-    """等子进程把数据桥拉起来；进程提前退出或超时都抛 RuntimeError。"""
+def wait_bridge(process, timeout_s=6.0):
+    """等子进程把数据桥拉起来；进程提前退出或超时都抛 RuntimeError。
+
+    6s 而非 3s：node 冷启动要加载采集器模块图（CDP/协议解码）并读头像缓存，
+    慢机器上 3s 会把「其实已经起来」误判成超时。
+    """
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         if process.poll() is not None:

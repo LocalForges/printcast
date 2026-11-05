@@ -201,6 +201,11 @@ def _sanitize_settings(data: dict) -> dict:
     if display.get('theme') not in ('dark', 'light'):
         display['theme'] = 'dark'
     display['announceText'] = str(display.get('announceText') or '')[:200]
+    # 采集平台：只认采集器注册表里的 id，未知值回落 douyin（老配置里的 'other' 也落到这里）。
+    live = data.setdefault('live', {})
+    if live.get('platform') not in ('douyin', 'generic'):
+        live['platform'] = 'douyin'
+    live['defaultRoom'] = str(live.get('defaultRoom') or '')[:64]
     # 未知分区不落盘，避免脏配置无限膨胀。
     return {k: v for k, v in data.items() if k in _SECTIONS}
 

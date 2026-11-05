@@ -4,6 +4,36 @@
 
 ---
 
+## 采集平台适配层 · 配置即时生效 · 控制台信息层重做（2026-11-05 晚）
+
+三件事一起收口：**采集要为多平台做准备**、**改配置不用等**、**当前在打什么一眼能看到**。
+
+### 1. 采集：适配器 + 通用推流口（平台无关的稳定边界）
+
+- **事件契约 v1**（`src/collector/platforms/contract.mjs`）冻结为唯一边界：`{v, platform, source, type, name, avatar, text?, gift?, raw?, count?, ts}`；`type ∈ comment|gift|like|join|follow`。浏览器采集与外部推流都先归一化再进打印队列，下游只认契约不认平台。契约文档见 `docs/live-event-contract.md`。
+- **平台注册表**（`platforms/index.mjs`）：内置 `douyin`（浏览器 CDP 采集，`needsBrowser/needsRoom=true`）与 `generic`（不驱动浏览器，等推流）；未知 id 回落默认平台，配置写错也不会让服务起不来。新增平台 = 加一个 adapter 模块 + 注册表登记一行 + 后端白名单加 id，**主流程不用改**。
+- **通用推流入口 `POST /ingest`**（`src/server/bridge-server.mjs`）：按契约推事件即可接入 B 站 / 快手 / 视频号 / 自建弹幕源。传输层只做方法（405）、可选令牌（`PRINTCAST_INGEST_TOKEN` → 401）、体积（64KB → 413）、JSON（400）；单次最多 50 条，逐条回执 `accepted / rejected`。业务侧统一记账（花名册 / 分类计数 / 最后一帧时间），与浏览器采集口径一致。
+- **`/health` 增补** `platform` 与 `stats`；`probe.bridge_status()` 透传，`/__api/status` 新增 `capture` 块（`platform / configured / demoFill / ingestUrl`）。
+- **修掉一个老 bug**：采集器上报的 `identity` 是 `src/collector` 目录，探测端却拿**仓库根**比对，两者永不相等 → 控制台一直显示「数据桥未启动」，点启动必报「超时」（其实桥已起来）。现改为上报仓库根；`wait_bridge` 超时同时从 3s 放宽到 6s，避免慢机器误判。
+
+### 2. 配置即时生效（不再等 5 秒）
+
+- `relay.ALLOWED_TYPES` 新增 `settings-changed`；设置写成功（POST/PUT/DELETE `/__api/settings`，2xx）后由服务端广播一条**只含信号不含值**的消息，展示端收到即重读 `/__api/settings`，仍以 GET 为唯一权威来源。
+- 展示端复用**既有 `/__scene-events` 长轮询**接收该信令，5s 轮询降为兜底；并改为**仅在页面可见时轮询**（OBS/投屏常驻后台不空转），切回前台立即补一次。
+- 展示端设置统一走 `window.__PC`：`settings-loader.js` 新增 `reload()`（重新拉取并应用品牌/展示层），渲染模块不再各自 `fetch`，杜绝「双源」。
+
+### 3. 控制台信息层重做（少点几下、少猜几次）
+
+- **顶部状态条**：本机服务 / 采集（平台 + 最新事件多久前，点一下即可启停桥）/ 剧本播放（自动播放间隔或已暂停）/ 3D 打印（剧本是否接入打印）；平台与设置不一致时显示「平台待重启」，避免「改了没生效」的困惑。
+- **当前打印主视觉**：头像真实渲染（加载失败回退首字），补上所属内容包、第 N 位、模式、进度（第 X / 共 Y 位、第几轮）、台词与标签。
+- **「打这个」**：内容包抽屉里每个角色旁直接点名出场，把「回内容源面板 → 手输角色 ID → 点名」四步压成一次点击；未开播时按钮禁用并说明原因。
+- **采集面板**：平台下拉（抖音 / 通用推流）；选通用推流时直接给出可复制的 `/ingest` 地址、curl 示例与字段说明；`live.demoFill`（无采集时用演示人物填充）就地可开关。
+- 修掉展示端首帧 `settings` 为空导致的渲染报错（打印规则与采集面板加空态守卫），并把控制台抽屉的头像口径与展示端 `mediaUrl` 对齐（`*.svg → /avatars/`、raster → `/media/`），演示包头像在控制台也能看到。
+
+回归：`pytest` **135 项全绿**（新增 `tests/test_settings_changed.py`）；`node --test` **87 项全绿**（新增 `tests/ingest.test.mjs` 覆盖契约归一化、平台注册表、`/ingest` 的 200/400/401/405/413）。冒烟：PUT 设置后订阅端立刻收到 `settings-changed`；`/__start-bridge?platform=generic` 返回 `ok:true` 且 identity 匹配；`POST /ingest` 两条合法 + 一条非法 → `accepted:2, rejected:["bad"]`；`/health` 统计 `comment=1, gift=1, roster=1`；`/__api/status.capture.ingestUrl` 为 `http://127.0.0.1:8765/ingest`。
+
+---
+
 ## 控制台→打印台实时同步 · 剧本播放并入内容源 · 演示数据开箱即用（2026-11-05）
 
 针对四条反馈（设置不同步、剧本播放独立菜单、直播无演示数据、操作不够直观）的一次收敛，全部遵循「控制台写 / 展示端只读 / 零第三方依赖」。

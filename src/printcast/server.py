@@ -101,6 +101,23 @@ def audit_api_call(method, path, status):
     audit_write(action, target or resource, ok, detail, status)
 
 
+def notify_settings_changed(relay, segments, status):
+    """配置写成功后向订阅端广播一条信令，展示端收到即重读，不必等轮询。
+
+    只发一个「变了」的信号，不携带配置值：展示端仍走 GET /__api/settings 取权威
+    内容，避免两份数据在链路上产生分叉。广播失败绝不影响这次写请求。
+    """
+    if relay is None or not (200 <= int(status) < 400):
+        return
+    if len(segments) < 2 or segments[1] != 'settings':
+        return
+    try:
+        relay.publish('settings', {'type': 'settings-changed',
+                                   'at': int(time.time() * 1000)})
+    except Exception as exc:
+        print('[printcast] 配置变更信令广播失败：%s' % exc, file=sys.stderr)
+
+
 def room_id(raw):
     match = re.fullmatch(r'(?:https?://live\.douyin\.com/)?(\d{5,25})(?:[/?#].*)?', str(raw).strip())
     if not match:
@@ -139,7 +156,7 @@ class _BridgeKeeper:
     def __init__(self):
         self.process = None
 
-    def start(self, room, cdp_port=None):
+    def start(self, room, cdp_port=None, platform=None):
         if bridge_status()['ok']:
             return dict(ok=True, already=True)
         node = shutil.which('node')
@@ -148,7 +165,11 @@ class _BridgeKeeper:
         env = os.environ.copy()
         if cdp_port:
             env['PRINTER_CDP_PORT'] = str(cdp_port)
-        BRIDGE_ROOM_FILE.write_text(room, encoding='utf-8')
+        # 平台由环境变量透传：采集器按平台决定是否驱动浏览器（douyin 需要，generic 不需要）。
+        if platform:
+            env['PRINTCAST_PLATFORM'] = str(platform)
+        if room:
+            BRIDGE_ROOM_FILE.write_text(room, encoding='utf-8')
         with open(BRIDGE_LOG, 'ab') as log:
             self.process = subprocess.Popen(
                 [node, str(ROOT / 'src' / 'collector' / 'live-collector.mjs'), room],
@@ -439,6 +460,7 @@ def make_handler(active_port):
                 return self._json(404, {'ok': False, 'error': '未知的 API 路径'})
             if self.command in ('POST', 'PUT', 'DELETE'):
                 audit_api_call(self.command, parsed.path, response.status)
+                notify_settings_changed(relay, segments, response.status)
             self.send_response(response.status)
             self.send_header('Content-Type', response.content_type)
             self.send_header('Content-Length', str(len(response.body)))
@@ -551,12 +573,26 @@ def make_handler(active_port):
             except Exception as exc:
                 print('[printcast] 资产计数失败：%s' % exc, file=sys.stderr)
                 counts = {'packs': 0, 'media': 0}
+            try:
+                live_cfg = settings_module.load_settings().get('live') or {}
+            except Exception:
+                live_cfg = {}
+            # 采集源：以桥自报为准（真实在跑的那个），配置值作为「应该用哪个」的对照；
+            # ingestUrl 只在桥在线时给出，控制台据此展示推流地址与 curl 示例。
+            capture = {
+                'platform': bridge_state.get('platform') or live_cfg.get('platform') or 'douyin',
+                'configured': live_cfg.get('platform') or 'douyin',
+                'demoFill': bool(live_cfg.get('demoFill')),
+                'ingestUrl': ('http://127.0.0.1:%s/ingest' % bridge_state['port'])
+                             if bridge_state.get('ok') else '',
+            }
             return self._json(200, {
                 'ok': True,
                 'service': {'port': active_port,
                             'uptimeSeconds': round(time.time() - started_at)},
                 'bridge': bridge_state,
                 'broadcast': broadcast.state(),
+                'capture': capture,
                 'counts': counts,
             })
 
@@ -681,11 +717,20 @@ def make_handler(active_port):
                     room = clean_room(BRIDGE_ROOM_FILE.read_text(encoding='utf-8'))
                 except OSError:
                     room = ''
-            if not room:
+            # 平台默认取控制台设置；显式传参优先（控制台切换后立即生效）。
+            platform = (q.get('platform') or [''])[0].strip().lower()
+            if platform not in ('douyin', 'generic'):
+                try:
+                    platform = (settings_module.load_settings().get('live') or {}).get('platform') or 'douyin'
+                except Exception:
+                    platform = 'douyin'
+            # 通用推流不需要房间号：它等外部脚本 POST /ingest。
+            if not room and platform != 'generic':
                 return self._json(400, {'ok': False, 'error': 'no room'})
-            result = bridge.start(room, LIVE_DEBUG_PORT if listening(LIVE_DEBUG_PORT) else None)
-            audit_write('bridge.start', room, bool(result.get('ok')),
-                        result.get('error') or '启动数据桥',
+            result = bridge.start(room, LIVE_DEBUG_PORT if listening(LIVE_DEBUG_PORT) else None,
+                                  platform)
+            audit_write('bridge.start', room or platform, bool(result.get('ok')),
+                        result.get('error') or ('启动数据桥（%s）' % platform),
                         200 if result.get('ok') else 500)
             return self._json(200 if result.get('ok') else 500, result)
 

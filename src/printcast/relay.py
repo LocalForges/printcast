@@ -9,6 +9,8 @@ ALLOWED_TYPES = frozenset({
     'view-camera-request', 'view-camera-change',
     # 内容包角色「出场」广播：调度器把下一个角色推给所有订阅的浏览器标签页。
     'view-appearance',
+    # 控制台写设置后广播一条「配置已变」信令：展示端不必等 5s 轮询，收到即重读。
+    'settings-changed',
 })
 
 

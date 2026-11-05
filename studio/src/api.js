@@ -99,7 +99,13 @@ export const api = {
   // 控制台总览：一次拿到本机服务 / 数据桥 / 广播 / 资产计数。
   getStatus: () => req('GET', '/status'),
   // 数据桥启停、拉起展示窗口：后端已实现，控制台此前从未调用。
-  startBridge: (room) => localGet('/__start-bridge' + (room ? '?room=' + encodeURIComponent(room) : '')),
+  // platform 决定采集器是否驱动浏览器（douyin 需要，generic 只等 /ingest 推流）。
+  startBridge: (room, platform) => {
+    const q = [];
+    if (room) q.push('room=' + encodeURIComponent(room));
+    if (platform) q.push('platform=' + encodeURIComponent(platform));
+    return localGet('/__start-bridge' + (q.length ? '?' + q.join('&') : ''));
+  },
   stopBridge: () => localGet('/__stop-bridge'),
   openScene: (path, orient = 'landscape') =>
     localGet('/__open-scene?path=' + encodeURIComponent(path) + '&orient=' + encodeURIComponent(orient)),

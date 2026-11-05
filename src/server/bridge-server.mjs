@@ -62,10 +62,77 @@ function controlFrame(opcode, payload = Buffer.alloc(0)) {
   return Buffer.concat([header, payload]);
 }
 
-export function startWSServer(port, { onMessage, onStatus, onError, identity = null, fallbackPorts = 0 } = {}) {
+const MAX_INGEST_BYTES = 64 * 1024;
+
+function sendJson(res, code, obj) {
+  const body = Buffer.from(JSON.stringify(obj), 'utf8');
+  res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'content-length': body.length });
+  res.end(body);
+}
+
+// 通用推流入口：外部平台脚本按事件契约 POST 到这里，事件进入同一条打印通道。
+// 这里只做「传输层」职责（方法 / 令牌 / 体积 / JSON 解析），归一化与业务判断
+// 交给 onIngest，保证桥服务不依赖采集器的实现细节。
+function handleIngest(req, res, onIngest) {
+  if (req.method !== 'POST') { sendJson(res, 405, { ok: false, error: '只支持 POST' }); return; }
+  const expected = process.env.PRINTCAST_INGEST_TOKEN || '';
+  if (expected && String(req.headers['x-ingest-token'] || '') !== expected) {
+    sendJson(res, 401, { ok: false, error: '令牌不匹配' });
+    return;
+  }
+  let size = 0;
+  const chunks = [];
+  let aborted = false;
+  req.on('data', chunk => {
+    if (aborted) return;
+    size += chunk.length;
+    if (size > MAX_INGEST_BYTES) {
+      aborted = true;
+      sendJson(res, 413, { ok: false, error: '请求体超过 ' + MAX_INGEST_BYTES + ' 字节上限' });
+      req.destroy();
+      return;
+    }
+    chunks.push(chunk);
+  });
+  req.on('end', () => {
+    if (aborted) return;
+    let payload;
+    try {
+      payload = JSON.parse(Buffer.concat(chunks).toString('utf8') || 'null');
+    } catch {
+      sendJson(res, 400, { ok: false, error: 'JSON 解析失败' });
+      return;
+    }
+    let result;
+    try {
+      result = onIngest ? onIngest(payload) : { accepted: 0, rejected: [] };
+    } catch (e) {
+      sendJson(res, 500, { ok: false, error: String(e && e.message || e) });
+      return;
+    }
+    sendJson(res, 200, {
+      ok: true,
+      accepted: result.accepted || 0,
+      rejected: result.rejected || [],
+    });
+  });
+  req.on('error', () => { if (!aborted) { aborted = true; try { res.destroy() } catch { } } });
+}
+
+export function startWSServer(port, { onMessage, onStatus, onError, onIngest, onHealth, identity = null, fallbackPorts = 0 } = {}) {
   const clients = new Set();
   const server = http.createServer((req, res) => {
-    if (req.url === '/health') { res.writeHead(200, {'content-type':'application/json'}); res.end(JSON.stringify({service:'avatar-printer', identity, port:server.address().port})); return; }
+    const path = String(req.url || '').split('?', 1)[0];
+    if (path === '/health') {
+      // onHealth 让采集器把平台、统计、最后一帧时间带给控制台；探测方只认
+      // service/identity，多出来的字段对老客户端是透明的。
+      let extra = {};
+      if (onHealth) { try { extra = onHealth() || {} } catch { extra = {} } }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ service: 'avatar-printer', identity, port: server.address().port, ...extra }));
+      return;
+    }
+    if (path === '/ingest') { handleIngest(req, res, onIngest); return; }
     res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
     res.end('avatar-printer data bridge running');
   });
