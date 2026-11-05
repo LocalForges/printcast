@@ -1,0 +1,20 @@
+/* 设计令牌：主题与强调色的唯一落点。--accent 由控制台 branding.accent 覆盖。 */
+:root{
+  --accent:#4f8cff;
+  --pc-bg:#0b0e14;
+  --pc-surface:#141922;
+  --pc-surface-2:#11151d;
+  --pc-border:#292f3b;
+  --pc-text:#f4f5f7;
+  --pc-muted:#8792a1;
+  --pc-metric:#1b222d;
+}
+html[data-theme="light"]{
+  --pc-bg:#f4f6fb;
+  --pc-surface:#ffffff;
+  --pc-surface-2:#ffffff;
+  --pc-border:#d8deea;
+  --pc-text:#1b2230;
+  --pc-muted:#5a6678;
+  --pc-metric:#eef2f9;
+}

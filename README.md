@@ -8,7 +8,7 @@
 
 - **完全开源免费（MIT）**，无任何付费或授权限制，可自由下载、使用、修改、分发。
 - **零 npm 依赖**：采集层、传输层、渲染层全部手写，Three.js 已 vendored 在 `assets/`，**核心几何渲染完全离线可跑**；3D 场景贴图与音效需按需拉取（见快速开始第 1 步），缺失时降级为无贴图/静音。工作台 `/studio/` 的产物已入库，clone 即用。
-- **中英双语**：`web/index.html` / `web/index-en.html` 独立文件、独立语音包，互不影响。
+- **纯净中文版**：展示端只保留 `web/index.html` 一套中文实现；英文版、跳转壳、竖屏空壳页与宣传页已全部下线。
 
 ---
 
@@ -68,7 +68,7 @@ python -m printcast --server-only    # 或简写：printcast --server-only
 ### 旧命令兼容
 
 `python src/desktop/desktop_launcher.py --server-only` 与 `from desktop_launcher import ...` **继续可用**：
-`src/desktop/` 下两个文件已改为薄转发到 `printcast` 包，保证旧 bat 脚本、`site/guide.html` 与外部引用不失效。新代码请统一用 `python -m printcast` / `from printcast.xxx import ...`。
+`src/desktop/` 下两个文件已改为薄转发到 `printcast` 包，保证旧 bat 脚本与外部引用不失效。新代码请统一用 `python -m printcast` / `from printcast.xxx import ...`。
 
 ### macOS 注意
 
@@ -78,7 +78,7 @@ python -m printcast --server-only    # 或简写：printcast --server-only
 - 若终端一直没有任何输出，用 `python -V` 和 `which python` 确认解释器是否指向 `.venv/bin/python`。
 
 
-> **为什么必须走 HTTP**：`web/app.zh.mjs` 用原生 ES modules 加载 `../src/**/*.mjs` 与 `importmap`，`file://` 协议会被 CORS 拦死。
+> **为什么必须走 HTTP**：`web/app/app.js` 是 ES module，投屏窗口 `live-view.html` 还用 `importmap` 加载 `../assets/**`，`file://` 协议会被 CORS 拦死。
 
 ## 界面预览
 
@@ -114,14 +114,22 @@ printcast/
 │   ├── server/       传输层   bridge-server.mjs
 │   ├── render/       渲染层   scene-channel.mjs  scene-output.mjs  render-budget.mjs
 │   ├── rules/        规则层   print-settings.mjs  demo-rules.mjs
-│   ├── audio/        语音层   printer-audio.mjs  gift-speech.mjs  gift-speech-en.mjs
+│   ├── audio/        语音层   printer-audio.mjs  gift-speech.mjs
 │   └── desktop/      兼容层   desktop_launcher.py  scene_relay.py（薄转发，勿写新代码）
-├── web/              运行页面
-│   ├── index.html / index-en.html   DOM 骨架（各约 3KB）
-│   ├── app.css                      共用样式（中英完全一致）
-│   ├── app.zh.mjs / app.en.mjs      全部交互逻辑（打印队列、Three.js 场景、WebRTC 选主、语音）
-│   └── live-view.html / live.html   独立场景窗口 / 竖屏直播画面
-├── site/             宣传页    features.html  guide.html  cover-*.html
+├── web-src/          展示端源码（构建期）
+│   ├── parts/        按职责分片：运行时 / 场景 / 打印引擎 / 交互层
+│   ├── core/         可独立 import 的纯逻辑（队列策略、进度语义）
+│   ├── styles/       分层样式：令牌 / 骨架 / HUD / 浅色主题
+│   └── imports.txt  构建入口的依赖清单
+├── web/              运行页面（产物已入库，clone 即用）
+│   ├── index.html         唯一中文入口（纯 DOM 骨架）
+│   ├── app/app.js         构建产物（Three.js 已打包，离线自包含）
+│   ├── app/app.css        构建产物（分层样式合并）
+│   ├── settings-loader.js 统一配置入口
+│   ├── live-view.html     投屏镜像窗口（WebRTC 接收端，原生 ES module）
+│   └── studio-dist/       控制台构建产物
+├── tests/            测试      *.test.mjs  test_*.py  conftest.py
+├── scripts/          脚本      build-display.sh  build-studio.sh  start*.bat  vendor-assets.sh
 ├── tests/            测试      *.test.mjs  test_*.py  conftest.py
 ├── scripts/          脚本      start.sh  start*.bat  run-*-forever.bat  vendor-assets.sh
 ├── assets/           静态资源  three.module.js  OrbitControls  Reflector  贴图  音频
@@ -152,13 +160,13 @@ printcast/
 
 > 命名原则：采集层不绑定平台（不叫 douyin-*，为多平台适配铺路）；JS 用 kebab-case、Python 用 snake_case；文件名即职责。
 
-**数据层是真正的业务逻辑，但不是前后端分离**：内容包 CRUD、导入校验、图片上传集中在 `src/printcast/` 的 `schema/storage/api` 一组纯模块里，通过 `/__api/*` 暴露给工作台页面。渲染主页面（111KB 的 WebGL/队列/信令逻辑）仍然独立、不进构建链——我们没有为了「架构好看」就给整站套上 HTTP 框架，只在真正需要 CRUD 的地方加了薄薄一层同域 API。真正的实时边界依旧是 WebSocket（`ws://127.0.0.1:8765`，Node 采集层 ↔ 浏览器渲染层）。
+**数据层是真正的业务逻辑，但不是前后端分离**：内容包 CRUD、导入校验、图片上传集中在 `src/printcast/` 的 `schema/storage/api` 一组纯模块里，通过 `/__api/*` 暴露给工作台。展示端现已纳入 Vite 构建链（源码 `web-src/` → 产物 `web/app/` 入库），但 Vite **只在构建期**使用：运行时仍是原生 ES module、Three.js 继续 vendored，clone 后不装 npm 也能跑。
 
 ### 控制台与展示端的边界（本里程碑明确）
 
 - **控制台 = 唯一的配置与状态来源**：`/studio`（Vue 工作台）与本地 Python API（`api.py` + `settings.py`）负责写一切——内容包、出场广播、打印规则、品牌与展示文案。展示端**绝不直接写配置**。
-- **展示端只读取、只渲染**：`web/settings-loader.js` 是展示端唯一的配置入口，只发一次 `GET /__api/settings`（返回 `{ok, settings}`，必须取 `settings` 本体），渲染品牌名、标语、页脚链接、强调色、主题、`演示模式` 徽标、公告条与直播间号默认值；渲染主页（`app.zh.mjs` / `app.en.mjs`）经 `window.__PC.ready` 复用同一份设置，不再各自 fetch。
-- **控制命令只在控制台**：`broadcast.html` 已改为**只读出场卡片**（仅 GET 状态与订阅 `/__scene-events`），开始 / 下一个 / 点名 / 重置全部移到 `/studio` 的广播控制区；渲染主页的打印规则面板在控制台设置生效后转为**只读**并指向 `/studio`。
+- **展示端只读取、只渲染**：`web/settings-loader.js` 是展示端唯一的配置入口，只发一次 `GET /__api/settings`（返回 `{ok, settings}`，必须取 `settings` 本体）；`web-src/parts/` 的渲染模块经 `window.__PC.ready` 复用同一份设置，不再各自 fetch。
+- **控制命令只在控制台**：出场广播的开始 / 下一个 / 点名 / 重置全部在 `/studio`；展示端的打印规则面板为只读并指向 `/studio`。
 - **所有控制台设置都有真实消费方**：
   | 设置 | 消费方 |
   |---|---|
@@ -191,17 +199,19 @@ printcast/
 
 ## 前端结构（HTML / CSS / ES 模块）
 
-`web/index.html` 原本是 120KB 单文件（108KB 内联 `<script>` + 82 个函数）。现已彻底拆开：
+展示端已开启前端工程化，不再是 124KB 单页：
 
-| 文件 | 内容 | 体积 |
+| 层 | 位置 | 说明 |
 |---|---|---|
-| `index.html` / `index-en.html` | 纯 DOM 骨架 + `importmap` + 两个引用 | 3.2 / 3.9 KB |
-| `app.css` | 中英共用样式（两份原本字节相同） | 5.7 KB |
-| `app.zh.mjs` / `app.en.mjs` | 全部交互逻辑 | 111 / 114 KB |
+| 源码 | `web-src/parts/*.js` | 按职责分为运行时 / 三维场景 / 打印引擎 / 交互层四片 |
+| 纯逻辑 | `web-src/core/queue-policy.js` | 真 ES 模块，浏览器与 Node 测试共用；负责队列上限、去重与进度语义 |
+| 样式 | `web-src/styles/*.css` | 令牌、骨架、HUD、浅色主题分层，不再靠 `!important` 补丁互相覆盖 |
+| 构建 | `vite.config.js` + `scripts/build-display.sh` | Vite 仅构建期使用；产物固定为 `web/app/app.js` / `app.css` 并入库 |
+| 入口 | `web/index.html` | 只留 DOM，引用产物；URL 契约 `/web/index.html` 保持不变 |
 
-拆分依据：`<script type="module">` 内联时相对 import 基于 **HTML 所在目录**，抽到同目录的 `.mjs` 后基于**模块所在目录** —— 两者都是 `web/`，所以 `../src/**/*.mjs` 一条都不用改。`importmap`（`"three": "../assets/three.module.js"`）必须留在 HTML 里，因为它按 HTML 位置解析。执行时机同为 deferred，DOM 就绪后运行，行为不变。
+`web-src/` 与旧 `web/` 同级，因此 `../src/**`、`../assets/**` 的相对 import 无需改写；构建产物把 Three.js 一并打包，离线自包含。分片之间共享一个模块作用域（渲染引擎是命令式的 Three.js 循环），纯逻辑与策略另放在 `core/` 下作为可测真模块。改了展示端源码请执行 `bash scripts/build-display.sh` 并把 `web/app/` 一并提交，CI 会用 `git diff --exit-code` 拦截产物漂移。
 
-> **为什么没有拆得更细**：这 82 个函数共享几十个模块级变量（场景对象、打印队列、WebRTC 连接），继续切成多个内聚模块需要把状态显式提到共享模块并逐段做 GPU 回归。当前这一步做到了「HTML 只留 DOM、CSS 与逻辑全部外置、零回归」，是可以在无 GPU 环境里安全验证的最大步。`tests/html-structure.test.mjs` 会阻止有人把内联脚本贴回去。
+> `web/live-view.html` 是独立投屏窗口，故意**不**进构建链：它靠原生 importmap 解析 `OrbitControls.js` 的裸模块名 `three`，保留 `three` 的 importmap 声明是必需的。
 
 中英两份逻辑目前仍是独立文件（差异约 15%，主要是文案与 TTS），合并为「单一模块 + i18n 字典」是下一步，见 [ROADMAP.md](ROADMAP.md)。
 
@@ -279,7 +289,7 @@ bash scripts/build-studio.sh
 
 - **工作台排期预演**：`/studio/` 的「排期预演」选内容包 + 策略 + 模式 + 数量 + **固定 seed** + 循环，拉 `GET /__api/schedule` 渲染成可点击的时间轴卡片带；「复制复现链接」得到完整参数 URL，「本地预演」在工作台内逐位高亮（**不触发真实广播 / 打印**），「按此配置开播」把同一 seed 交给广播控制器，`state.seed` 可核对。纯数字 seed 在前端统一收口成 number，避免 `Random('123')` 与 `Random(123)` 产生不同序列。
 
-- **实时出场卡片**：打开 `/web/broadcast.html` 充当「当前出场」**只读**显示面板，经 `SceneRelay` 的 `view-appearance` 消息实时刷新（角色名 / 头像 / 播报）；开始 / 下一个 / 点名 / 重置全部在 `/studio` 的广播控制区操作。
+- **出场 HUD 字幕**：出场角色的姓名 / 台词 / 标签 / 来源直接叠在打印台画面上（`view-appearance` 经 `/__scene-events` 送达），不再另开卡片页；开始 / 下一个 / 点名 / 重置全部在 `/studio` 的广播控制区操作。
 
 - **HTTP 端点**：
 
@@ -294,7 +304,7 @@ bash scripts/build-studio.sh
   | `GET /__api/audit?limit=100&action=pack.save&q=ming` | 控制台专属：按动作 / 关键词倒序查本机写操作，附全量统计 `stats`（总数 / 成功 / 失败 / 最近时间 / 动作清单 / 上限） |
   | `DELETE /__api/audit` | 清空操作日志（仅控制台），服务端随后补记一条 `audit.clear` |
 
-> 扩展更多人物零代码：在 `/studio/` 导入自定义内容包，或在 `data/packs/` 直接放 JSON，调度引擎会按 `order`/`weight`/`trigger` 自动驱动。`/broadcast.html` 与渲染主页共享同一 `SceneRelay` 通道，可作为 OBS 第二屏或主控大屏。
+> 扩展更多人物零代码：在 `/studio/` 导入自定义内容包，或在 `data/packs/` 直接放 JSON，调度引擎会按 `order`/`weight`/`trigger` 自动驱动。剧本出场与直播事件共用同一 `SceneRelay` 通道与同一条打印队列。
 
 ## 接入真实直播
 
@@ -371,7 +381,7 @@ cd tests && node --test *.test.mjs        # 75 个 node:test 用例（含前端�
 
 大体积二进制（音频 wav / 背景贴图 png / 文档截图，约 33MB）未随 git 提交，执行一次 `bash scripts/vendor-assets.sh` 即可从上游按原相对路径还原，之后完全离线可运行。`assets/three.module.js`（1.3MB）是渲染层唯一硬依赖，已直接入库，无需联网。
 
-**素材缺失降级（M2）**：若未执行 `vendor-assets.sh`，`web/app.zh.mjs` 与 `web/app.en.mjs` 在贴图 / 音频 / 头像加载失败时**不再 404 黑屏或弹出「请重启服务」**，而是降级为纯色材质 + 静音，并在左下角显示一条 `role="status"` 提示（列出缺失类别 + 还原命令）；OBS 采集的独立场景窗口（`?scene=1`）保持画面干净。规则演示台三个图标破图时自动隐藏而非留占位符。
+**素材缺失降级**：若未执行 `vendor-assets.sh`，`web-src/parts/` 在贴图 / 音频 / 头像加载失败时**不再 404 黑屏或弹出「请重启服务」**，而是降级为纯色材质 + 静音，并显示一条 `role="status"` 提示；OBS 采集的独立场景窗口（`?scene=1`）保持画面干净。
 
 ## 贡献与提交
 
@@ -381,13 +391,13 @@ cd printcast
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[test,desktop]"
 bash scripts/vendor-assets.sh       # 还原二进制资源
-python -m pytest                    # 127 项全绿（含 test_db / test_audit / test_server 子测试）
-cd tests && node --test *.test.mjs  # 75/75 应当全绿（含 studio-api / settings-loader / gift-preemption）
+python -m pytest                    # 135 项全绿（含 test_db / test_audit / test_server 子测试）
+cd tests && node --test *.test.mjs  # 87/87 应当全绿（含 queue-policy / html-structure / settings-loader）
 ```
 
-改了 Python 侧请跑 `python -m pytest`；改了采集层请务必跑 `tests/bridge.test.mjs`（覆盖 protobuf 信封识别、头像归属、点赞限流）；**改页面逻辑请改 `web/app.zh.mjs` 与 `web/app.en.mjs`，不要往 HTML 里塞内联脚本**（`html-structure.test.mjs` 会拦下）；改完起本地 HTTP 服务用浏览器打开 `/web/index.html` 看控制台。新增 Python 模块放 `src/printcast/`，不要写回 `src/desktop/`。
+改了 Python 侧请跑 `python -m pytest`；改了采集层请跑 `tests/bridge.test.mjs`；**改展示端请改 `web-src/parts/` 或 `web-src/styles/`，再执行 `bash scripts/build-display.sh` 重建产物**，不要直接编辑 `web/app/`，也不要往 HTML 里塞内联脚本（`html-structure.test.mjs` 会拦下）。新增 Python 模块放 `src/printcast/`。
 
-CI：`.github/workflows/ci.yml` 在每次 push / PR 时跑 `pytest`（Ubuntu，Python 3.11）、`node --test`（Node ≥ 18）与 `bash scripts/build-studio.sh` 构建校验，三者任一失败即阻断合并。本地未构建就提交的 `web/studio-dist/` 产物差异会被 CI 抓到。
+CI：`.github/workflows/ci.yml` 在每次 push / PR 时跑 `pytest`、`node --test`、展示端产物语法检查，以及 `build-studio.sh` + `build-display.sh` 的构建一致性校验；任一失败即阻断合并。未重建就提交的 `web/app/` / `web/studio-dist/` 产物差异会被 CI 抓到。
 
 ## 路线图
 

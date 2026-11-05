@@ -153,11 +153,11 @@ def _run_db(action, overwrite=False):
 
 def _serve_only(url, args):
     print(f'printcast 服务已启动：{url}', flush=True)
-    print(f'  主页   {url}web/index.html', flush=True)
-    print(f'  英文   {url}web/index-en.html', flush=True)
-    print(f'  直播间 {url}web/live.html', flush=True)
+    print(f'  打印台 {url}web/index.html', flush=True)
+    print(f'  控制台 {url}studio/', flush=True)
     print('  Ctrl+C 停止服务', flush=True)
-    target = (url + 'web/live.html') if args.room else (url + 'web/index.html')
+    # 英文版与遗留竖屏壳页已下线；--room 只影响采集房间号，展示端统一走 index.html。
+    target = url + 'web/index.html'
     if args.open_browser:
         if open_in_browser(target):
             print(f'已在默认浏览器中打开 {target}', flush=True)

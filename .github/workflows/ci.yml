@@ -31,10 +31,9 @@ jobs:
         working-directory: tests
         run: node --test *.test.mjs
 
-      - name: 两个渲染模块语法检查
+      - name: 展示端构建产物语法检查
         run: |
-          node --check web/app.zh.mjs
-          node --check web/app.en.mjs
+          node --check web/app/app.js
 
       - name: 原始示例包落库 + 数据层自检
         env:
@@ -46,7 +45,8 @@ jobs:
           python -m printcast --db verify
           python -m printcast --schedule ming-emperors --count 5
 
-      - name: 构建工作台并确认产物无漂移
+      - name: 构建工作台与展示端并确认产物无漂移
         run: |
           bash scripts/build-studio.sh
-          git diff --exit-code -- web/studio-dist/
+          bash scripts/build-display.sh
+          git diff --exit-code -- web/studio-dist/ web/app/

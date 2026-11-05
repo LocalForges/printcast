@@ -1,0 +1,22 @@
+/* 出场字幕 HUD：直播与剧本共用同一画面，不再另开卡片页。 */
+/* 出场字幕 HUD：把剧本/直播的姓名、台词、标签与来源叠在打印台上，
+   与 3D 打印共用同一画面；不再另开一张并行的卡片页。 */
+#hud{position:absolute;left:0;right:0;bottom:0;padding:14px 18px 16px;
+  background:linear-gradient(0deg,rgba(8,11,16,.86),rgba(8,11,16,.30) 70%,transparent);
+  color:#f3f6fb;pointer-events:none;font-family:inherit}
+#hud[hidden]{display:none}
+#hud .hud-row{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+#hud .hud-kicker{font-size:11px;letter-spacing:.12em;color:#9fc3e8;
+  border:1px solid #3a4a63;border-radius:999px;padding:2px 9px;white-space:nowrap}
+#hud .hud-name{font-size:22px;font-weight:800;line-height:1.15;
+  text-shadow:0 2px 10px rgba(0,0,0,.6)}
+#hud .hud-speech{margin-top:6px;font-size:15px;line-height:1.55;color:#e7eef7;
+  max-width:64ch;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+#hud .hud-tags{margin-top:7px;display:flex;gap:6px;flex-wrap:wrap}
+#hud .hud-tag{font-size:11px;color:#cfe0f2;background:rgba(63,90,124,.42);
+  border:1px solid rgba(120,150,190,.4);border-radius:6px;padding:2px 8px}
+#hud .hud-meta{margin-top:6px;font-size:12px;color:#9fb3c8}
+html[data-theme="light"] #hud{background:linear-gradient(0deg,rgba(240,244,250,.94),rgba(240,244,250,.55) 70%,transparent);color:#1b2230}
+html[data-theme="light"] #hud .hud-name,html[data-theme="light"] #hud .hud-speech{color:#1b2230;text-shadow:none}
+html[data-theme="light"] #hud .hud-meta{color:#5b6b80}
+html[data-theme="light"] #hud .hud-tag{color:#3a4a63;background:rgba(200,214,232,.7);border-color:#b9c6d8}

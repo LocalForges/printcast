@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title data-bind="branding.title">头像打印机</title>
-<link rel="stylesheet" href="./app.css" />
+<link rel="stylesheet" href="./app/app.css" />
 <meta name="referrer" content="no-referrer" />
     <link rel="stylesheet" href="../assets/live-rules.css" />
 <script src="./settings-loader.js"></script>
@@ -12,11 +12,7 @@
 <body>
 <div class="announce" data-announce hidden></div>
 <header>
-  <div class="brand"><b>▧</b> printcast <span class="tag">PRINTCAST</span>
-    <a href="../site/features.html" style="font-size:11px;text-decoration:none;margin-left:6px">功能介绍</a>
-    <a href="../site/guide.html" style="font-size:11px;text-decoration:none;margin-left:2px">使用教程</a>
-    <a href="./index-en.html" hreflang="en" style="font-size:11px;text-decoration:none;margin-left:2px" title="English">English</a>
-  </div>
+  <div class="brand"><b>▧</b> printcast <span class="tag">PRINTCAST</span></div>
   <div class="status"><i class="dot"></i><span id="status">演示模式</span></div>
 </header>
 
@@ -85,6 +81,6 @@
 </main>
 
 <script type="importmap">{"imports":{"three":"../assets/three.module.js"}}</script>
-<script type="module" src="./app.zh.mjs"></script>
+<script type="module" src="./app/app.js"></script>
 </body>
 </html>

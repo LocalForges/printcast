@@ -1,8 +1,27 @@
+/* 设计令牌：主题与强调色的唯一落点。--accent 由控制台 branding.accent 覆盖。 */
+:root{
+  --accent:#4f8cff;
+  --pc-bg:#0b0e14;
+  --pc-surface:#141922;
+  --pc-surface-2:#11151d;
+  --pc-border:#292f3b;
+  --pc-text:#f4f5f7;
+  --pc-muted:#8792a1;
+  --pc-metric:#1b222d;
+}
+html[data-theme="light"]{
+  --pc-bg:#f4f6fb;
+  --pc-surface:#ffffff;
+  --pc-surface-2:#ffffff;
+  --pc-border:#d8deea;
+  --pc-text:#1b2230;
+  --pc-muted:#5a6678;
+  --pc-metric:#eef2f9;
+}
+/* 基础骨架：由旧 web/app.css 迁移，去掉互相覆盖的补丁层。 */
 .scene-bar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:12px 18px;background:#171c24;border-bottom:1px solid #303642}.scene-bar>span{color:#a9b1bb;font-size:12px;margin-right:8px}.scene-bar button{font-size:12px;padding:8px 11px;background:#272e38;color:#c8cfd8;border:1px solid transparent}.scene-bar button.selected{background:#4a3930;border-color:#c99b70;color:#ffe0be}.scene-bar button:focus-visible{outline:2px solid #e6bd91;outline-offset:2px}
 
-.print-hud{position:absolute;right:20px;bottom:24px;width:215px;padding:14px 16px;background:#071c27da;border:1px solid #74e8ff55;border-radius:8px;color:#adf6ff;box-shadow:0 0 28px #00bbff14;pointer-events:none;font:12px "Microsoft YaHei",sans-serif}.print-hud b{float:right;font:600 13px monospace;color:#efffff}.fx-track{height:3px;background:#ffffff18;margin-top:12px;overflow:hidden}.fx-track i{display:block;width:0;height:100%;background:#67efff;box-shadow:0 0 9px #46e6ff}
 
-.canvas{height:740px!important}.overlay{display:none}.result{bottom:12px;left:18px;transform:none;opacity:.9;scale:.8;transform-origin:bottom left}.live{color:#fff5db!important} .layout{grid-template-columns:minmax(0,1fr) 300px!important} @media(max-width:850px){.layout{grid-template-columns:1fr!important}.canvas{height:650px!important}}
 
 *{box-sizing:border-box}body{margin:0;background:#0b0e14;color:#f4f5f7;font:14px 'Microsoft YaHei',sans-serif}header{height:72px;border-bottom:1px solid #262b35;display:flex;align-items:center;justify-content:space-between;padding:0 32px;background:#11151d}.brand{font-weight:800;font-size:19px;letter-spacing:1px}.brand b{color:#ff654f}.tag{font-size:11px;letter-spacing:2px;color:#7d8796;margin-left:12px}.status{color:#9aa5b3}.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#ffbd67;margin-right:8px}main{max-width:1600px;margin:auto;padding:26px 32px}.top{display:flex;justify-content:space-between;align-items:end;margin-bottom:22px}h1{font-size:24px;margin:0 0 6px}p{margin:0;color:#8792a1}.badge{background:#28221d;color:#ffbc79;padding:8px 12px;border-radius:6px;font-size:12px}.layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px}.panel{background:#141922;border:1px solid #292f3b;border-radius:10px;overflow:hidden}.stagehead,.panelhead{padding:17px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #292f3b;font-weight:bold}.stagehead small,.panelhead small{color:#788394;font-weight:normal}.canvas{height:510px;position:relative;background:radial-gradient(ellipse at 50% 48%,#303a48,#151b25 65%,#10151e)}canvas{width:100%;height:100%;display:block}.overlay{position:absolute;left:22px;top:20px;color:#a0aab8;font-size:12px;line-height:2}.overlay strong{display:block;color:#fff;font-size:15px}.live{position:absolute;right:20px;top:20px;color:#ff806b;font-size:12px}.result{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);background:#f4f0e9;color:#1b2028;border-radius:8px;padding:10px 22px;display:flex;align-items:center;gap:14px;min-width:220px;box-shadow:0 8px 25px #0008}.result img,.avatar{width:48px;height:48px;border-radius:50%;object-fit:cover;background:#e9a48d}.result strong{font-size:24px}.result span{display:block;font-size:11px;color:#656b73}.controls{padding:18px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}button{border:0;border-radius:6px;padding:11px 16px;cursor:pointer;font-weight:bold;background:#ff6852;color:white}button.secondary{background:#252c37;color:#d5dce5}button:hover{filter:brightness(1.12)}.hint{color:#768292;font-size:12px;margin-left:auto}.side{display:flex;flex-direction:column;gap:18px}.body{padding:18px 20px}.label{color:#98a3b1;font-size:12px;margin-bottom:8px;display:block}input{width:100%;background:#0e131b;border:1px solid #343c49;color:#fff;padding:11px;border-radius:5px;outline:none}input:focus{border-color:#ff6852}.row{display:flex;gap:8px;margin-top:10px}.row button{white-space:nowrap}.note{font-size:12px;line-height:1.7;color:#7f8a99;margin-top:12px}.metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px}.metric{background:#1b222d;padding:13px;border-radius:6px}.metric small{color:#8894a3}.metric strong{display:block;font-size:24px;margin-top:6px}.queue{min-height:145px}.item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #272e39}.item img{width:34px;height:34px;border-radius:50%}.item span{flex:1}.item b{color:#ffae80}.empty{color:#667282;text-align:center;padding:28px 0}footer{color:#667282;font-size:12px;padding:20px 2px;line-height:1.7}@media(max-width:850px){.layout{grid-template-columns:1fr}.canvas{height:400px}main{padding:20px 15px}header{padding:0 16px}.tag{display:none}}
 body.scene-only header,body.scene-only .top,body.scene-only .side,body.scene-only .controls,body.scene-only .stagehead,body.scene-only footer,body.scene-only .scene-bar{display:none!important}
@@ -18,19 +37,7 @@ header .brand b,header .tag,header a{color:var(--accent)}
 .announce{display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;padding:9px 22px;background:#121a26;border-bottom:1px solid #2a3547;color:#b9c6d6;font-size:13px}
 .announce[hidden]{display:none}
 .announce a{color:var(--accent);text-decoration:none}
-/* 亮色主题：由 display.theme 控制；展示端只渲染，不做配置。 */
-html[data-theme="light"] body{background:#f4f6fb;color:#1b2230}
-html[data-theme="light"] header{background:#fff;border-bottom-color:#d8deea}
-html[data-theme="light"] .panel,html[data-theme="light"] .card{background:#fff;border-color:#d8deea}
-html[data-theme="light"] .panelhead,html[data-theme="light"] .stagehead{border-bottom-color:#d8deea}
-html[data-theme="light"] p,html[data-theme="light"] .hint,html[data-theme="light"] .note,html[data-theme="light"] .status,html[data-theme="light"] .tag{color:#5a6678}
-html[data-theme="light"] .announce{background:#e9eef8;border-bottom-color:#d8deea;color:#33405a}
-html[data-theme="light"] .badge{background:#fff3e6;color:#8a5a12}
-html[data-theme="light"] .canvas{background:radial-gradient(ellipse at 50% 48%,#e8edf6,#cfd8e8 65%,#c3ccdd)}
-html[data-theme="light"] .result{background:#fff;color:#1b2230}
-html[data-theme="light"] button{background:#e8edf8;color:#1b2230;border-color:#c8d2e4}
-html[data-theme="light"] input,html[data-theme="light"] select{background:#fff;color:#1b2230;border-color:#c8d2e4}
-
+/* 出场字幕 HUD：直播与剧本共用同一画面，不再另开卡片页。 */
 /* 出场字幕 HUD：把剧本/直播的姓名、台词、标签与来源叠在打印台上，
    与 3D 打印共用同一画面；不再另开一张并行的卡片页。 */
 #hud{position:absolute;left:0;right:0;bottom:0;padding:14px 18px 16px;
@@ -52,3 +59,47 @@ html[data-theme="light"] #hud{background:linear-gradient(0deg,rgba(240,244,250,.
 html[data-theme="light"] #hud .hud-name,html[data-theme="light"] #hud .hud-speech{color:#1b2230;text-shadow:none}
 html[data-theme="light"] #hud .hud-meta{color:#5b6b80}
 html[data-theme="light"] #hud .hud-tag{color:#3a4a63;background:rgba(200,214,232,.7);border-color:#b9c6d8}
+/* 浅色主题：完整覆盖，不再让深底深字、内联颜色或 !important 补丁漏网。 */
+html[data-theme="light"] body{background:var(--pc-bg);color:var(--pc-text)}
+html[data-theme="light"] header{background:var(--pc-surface-2);border-bottom-color:var(--pc-border)}
+html[data-theme="light"] .panel,html[data-theme="light"] .card{background:var(--pc-surface);border-color:var(--pc-border)}
+html[data-theme="light"] .panelhead,html[data-theme="light"] .stagehead{border-bottom-color:var(--pc-border)}
+html[data-theme="light"] p,html[data-theme="light"] .hint,html[data-theme="light"] .note,
+html[data-theme="light"] .status,html[data-theme="light"] .tag{color:var(--pc-muted)}
+html[data-theme="light"] .announce{background:#e9eef8;border-bottom-color:var(--pc-border);color:#33405a}
+html[data-theme="light"] .badge{background:#fff3e6;color:#8a5a12}
+html[data-theme="light"] .canvas{background:radial-gradient(ellipse at 50% 48%,#e8edf6,#cfd8e8 65%,#c3ccdd)}
+html[data-theme="light"] .result{background:#fff;color:#1b2230}
+html[data-theme="light"] button{background:#e8edf8;color:#1b2230;border-color:#c8d2e4}
+html[data-theme="light"] input,html[data-theme="light"] select{background:#fff;color:#1b2230;border-color:#c8d2e4}
+
+/* 旧版遗漏的数据读数：深底深字在这里彻底修掉。 */
+html[data-theme="light"] .metric{background:var(--pc-metric)!important;border-color:var(--pc-border)!important}
+html[data-theme="light"] .metric small,html[data-theme="light"] .metric strong{color:#1b2230!important}
+html[data-theme="light"] .empty{color:#5a6678}
+html[data-theme="light"] .item b{color:#8a5a12}
+html[data-theme="light"] .item,html[data-theme="light"] .queue{color:#1b2230}
+html[data-theme="light"] .live{color:#9c4526}
+html[data-theme="light"] .dot{background:#c07a1e}
+html[data-theme="light"] .scene-bar,html[data-theme="light"] [style*="background:#1a202a"]{background:#eef2f9!important}
+html[data-theme="light"] #room-input{background:#fff!important;color:#1b2230!important;border-color:#c8d2e4!important}
+html[data-theme="light"] #print-progress,html[data-theme="light"] #live-status,
+html[data-theme="light"] #live-room,html[data-theme="light"] #room-open-status,
+html[data-theme="light"] #live-fetch,html[data-theme="light"] #yield-note,
+html[data-theme="light"] #demo-log,html[data-theme="light"] #print-rules-body,
+html[data-theme="light"] #print-rules summary{color:#33405a!important}
+
+/* 断点统一：旧版两套互相打架的 max-width:850px 已合并到这里。 */
+@media(max-width:850px){
+  .layout{grid-template-columns:1fr}
+  .canvas{height:420px}
+  main{padding:18px}
+  header{height:auto;min-height:64px;padding:10px 18px;flex-wrap:wrap;gap:8px}
+  .controls{flex-wrap:wrap}
+}
+@media(max-width:480px){
+  .top{flex-direction:column;align-items:flex-start;gap:12px}
+  h1{font-size:20px}
+  .canvas{height:340px}
+  .metrics{grid-template-columns:1fr}
+}

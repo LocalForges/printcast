@@ -15,7 +15,7 @@ def test_defaults_when_missing(tmp_path, monkeypatch):
     _use_tmp(tmp_path, monkeypatch)
     s = settings_module.load_settings()
     assert s['branding']['title'] == '头像打印机'
-    assert s['branding']['links']
+    assert s['branding']['links'] == [], '宣传页已下线，默认不挂外链'
     assert s['broadcast']['scriptedPrint'] is True
     # 首次读取应顺手落盘默认配置。
     assert (tmp_path / 'settings.json').is_file()
@@ -39,7 +39,7 @@ def test_sanitize_color_and_links(tmp_path, monkeypatch):
             'accent': 'not-a-color',
             'links': [
                 {'label': 'X', 'href': 'javascript:alert(1)'},
-                {'label': 'OK', 'href': '/site/guide.html'},
+                {'label': 'OK', 'href': '/docs/manual.html'},
                 {'label': 'Y', 'href': 'https://example.com'},
                 'bad-item',
             ],
@@ -50,7 +50,7 @@ def test_sanitize_color_and_links(tmp_path, monkeypatch):
     hrefs = [l['href'] for l in saved['branding']['links']]
     assert 'javascript:alert(1)' not in hrefs
     assert 'bad-item' not in hrefs
-    assert '/site/guide.html' in hrefs
+    assert '/docs/manual.html' in hrefs
     assert 'https://example.com' in hrefs
 
 
@@ -87,12 +87,12 @@ def test_dangerous_link_schemes_rejected(tmp_path, monkeypatch):
     _use_tmp(tmp_path, monkeypatch)
     saved = settings_module.save_settings({'branding': {'links': [
         {'label': 'x', 'href': 'data:text/html,<script>1</script>'},
-        {'label': 'y', 'href': './site/guide.html'},
+        {'label': 'y', 'href': './docs/manual.html'},
         {'label': 'z', 'href': 'https://example.com'},
     ]}})
     hrefs = [l['href'] for l in saved['branding']['links']]
     assert not any(h.startswith('data:') for h in hrefs)
-    assert './site/guide.html' in hrefs
+    assert './docs/manual.html' in hrefs
     assert 'https://example.com' in hrefs
 
 

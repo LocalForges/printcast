@@ -86,9 +86,9 @@ async function main() {
   });
   const html = await fetchText('/web/index.html');
   ok('打印页可访问', html.includes('AVATAR PRINT STUDIO') || html.includes('printcast'));
-  // 逻辑已抽到独立 ES 模块：HTML 只留 DOM 骨架，场景模式代码在 app.zh.mjs 里。
-  ok('页面引用外部模块', html.includes('app.zh.mjs') && !html.includes('<script type="module">'));
-  const app = await fetchText('/web/app.zh.mjs');
+  // 展示端已工程化：HTML 只留 DOM 骨架，逻辑在构建产物 web/app/app.js 里。
+  ok('页面引用构建产物', html.includes('app/app.js') && !html.includes('<script type="module">'));
+  const app = await fetchText('/web/app/app.js');
   ok('场景模式代码在位', app.includes('SCENE_MODE') && app.includes('scene-only'));
 
   // 1) 先开主页面（普通模式）

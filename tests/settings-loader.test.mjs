@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import { displaySource } from './display-source.mjs';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -71,7 +72,7 @@ const BASE = {
   branding: {
     title: '控制台命名', subtitle: '副标题来自控制台', accent: '#ff654f',
     footer: '页脚 <b>来自控制台</b>',
-    links: [{ label: '教程', href: '/site/guide.html' }],
+    links: [{ label: '教程', href: '/docs/manual.html' }],
   },
   display: {
     theme: 'light', overlayText: 'OVERRIDE', overlaySub: '来自控制台的副文案',
@@ -103,7 +104,7 @@ test('品牌 / 主题 / 链接全部按控制台值渲染', async () => {
   assert.equal(rootStyle.props['--accent'], '#ff654f');
   assert.equal(rootAttrs['data-theme'], 'light');
   assert.equal(linksHost.childNodes.length, 1);
-  assert.equal(linksHost.childNodes[0].href, '/site/guide.html');
+  assert.equal(linksHost.childNodes[0].href, '/docs/manual.html');
   assert.equal(linksHost.childNodes[0].textContent, '教程');
 });
 
@@ -117,11 +118,11 @@ test('页脚容器含 [data-links] 时，绑定文本不得删掉链接宿主', 
   assert.equal(textNode.nodeValue, '页脚 <b>来自控制台</b>');
   assert.ok(footer.childNodes.includes(linksHost), '链接宿主必须保留');
   assert.equal(linksHost.childNodes.length, 1, '控制台链接仍须渲染');
-  assert.equal(linksHost.childNodes[0].href, '/site/guide.html');
+  assert.equal(linksHost.childNodes[0].href, '/docs/manual.html');
 });
 
 test('展示页页脚把 data-bind 与 data-links 拆成兄弟节点', () => {
-  for (const f of ['index.html', 'index-en.html']) {
+  for (const f of ['index.html']) {
     const s = fs.readFileSync(path.join(WEB, f), 'utf8');
     assert.ok(!/<footer[^>]*data-bind/.test(s),
       `${f} 的 footer 不应直接带 data-bind（整块 textContent 会删掉链接容器）`);
@@ -146,7 +147,7 @@ test('公告条开启时，文案与链接全部来自控制台（页面无硬�
   await ready;
   assert.equal(announce.hidden, false);
   assert.equal(announce.childNodes[0].textContent, '本次直播由控制台配置');
-  assert.equal(announce.childNodes[1].href, '/site/guide.html');
+  assert.equal(announce.childNodes[1].href, '/docs/manual.html');
   assert.equal(announce.childNodes[1].textContent, '教程');
 });
 
@@ -161,33 +162,23 @@ test('live.defaultRoom 只回填空输入框，不覆盖用户已填内容', asy
 });
 
 test('静态页面不含硬编码第三方广告 / 微信号 / 水印', () => {
-  for (const f of ['index.html', 'index-en.html', 'broadcast.html', 'live-view.html']) {
+  // 英文版、跳转壳与宣传页已下线，展示端只剩 index.html 与投屏镜像窗口。
+  for (const f of ['index.html', 'live-view.html']) {
     const s = fs.readFileSync(path.join(WEB, f), 'utf8');
-    for (const bad of ['志哥AI', 'xfak888888899999', '17398730078', 'wx-copy.js', 'ad-strip']) {
-      assert.ok(!s.includes(bad), `${f} 仍残留 ${bad}`);
-    }
-  }
-  for (const f of ['features.html', 'guide.html']) {
-    const s = fs.readFileSync(path.join(ROOT, 'site', f), 'utf8');
-    for (const bad of ['志哥AI', 'xfak888888899999', '17398730078', 'wx-copy.js', 'class="wm"']) {
+    for (const bad of ['志哥AI', 'xfak888888899999', '17398730078', 'wx-copy.js', 'ad-strip', 'class="wm"']) {
       assert.ok(!s.includes(bad), `${f} 仍残留 ${bad}`);
     }
   }
 });
 
 test('展示端不含任何配置写入；控制命令只在控制台', () => {
-  for (const f of ['index.html', 'index-en.html', 'broadcast.html', 'live-view.html']) {
+  for (const f of ['index.html', 'live-view.html']) {
     const s = fs.readFileSync(path.join(WEB, f), 'utf8');
     assert.ok(!/__api\/settings\s*['"]?\s*,\s*\{?\s*method\s*:\s*['"]PUT/i.test(s),
       `${f} 不得写 /__api/settings`);
   }
-  const bc = fs.readFileSync(path.join(WEB, 'broadcast.html'), 'utf8');
-  assert.ok(!bc.includes('action:'), 'broadcast.html 是只读展示页，不应包含广播控制命令');
-  assert.ok(!/method\s*:\s*['"]POST/.test(bc), 'broadcast.html 不得 POST');
-  // 两个渲染模块必须复用同一份设置（避免各自 fetch / 丢 settings 层）。
-  for (const f of ['app.zh.mjs', 'app.en.mjs']) {
-    const s = fs.readFileSync(path.join(WEB, f), 'utf8');
-    assert.ok(s.includes('window.__PC.ready'), `${f} 未复用统一设置入口`);
-    assert.ok(s.includes('printRules'), `${f} 未应用 printer 规则`);
-  }
+  // 渲染模块必须复用统一设置入口，不得各自 fetch。
+  const app = displaySource;
+  assert.ok(app.includes('window.__PC.ready'), '展示端未复用统一设置入口');
+  assert.ok(app.includes('printRules'), '展示端未应用 printer 规则');
 });

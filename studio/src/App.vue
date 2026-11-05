@@ -931,12 +931,13 @@ onUnmounted(() => {
                 <template v-else>{{ currentChar ? (currentChar.name || '?').slice(0, 1) : '—' }}</template>
               </div>
               <div class="hero-text">
-                <div class="eyebrow">现在正在打印<span v-if="runtimeText"> · 已运行 {{ runtimeText }}</span></div>
+                <div class="eyebrow">当前出场角色<span v-if="runtimeText"> · 已运行 {{ runtimeText }}</span></div>
                 <div class="hero-title">{{ currentChar ? (currentChar.name || currentChar.id || '未知角色') : '尚未开播' }}</div>
                 <div class="muted" v-if="bcState.active">
                   {{ (bcState.packIds || []).join(' / ') }} · 第 {{ bcState.seq || 0 }} 位 · 模式 {{ bcState.mode }}<template v-if="progressText"> · {{ progressText }}</template>
                 </div>
                 <div class="muted" v-else>在上方选好内容包后点「开始剧本播放」。</div>
+                <div class="muted">此处是剧本出场序列；3D 打印进度以打印台画面为准。</div>
                 <div class="hero-speech" v-if="currentChar && currentChar.speech">{{ currentChar.speech }}</div>
                 <div class="hero-tags" v-if="currentChar && currentChar.tags && currentChar.tags.length">
                   <span class="hero-tag" v-for="t in currentChar.tags" :key="t">{{ t }}</span>
@@ -1266,7 +1267,7 @@ onUnmounted(() => {
                 <label>页脚说明<textarea v-model="settings.branding.footer" rows="2"></textarea></label>
                 <div class="row"><span class="field-label">页脚链接</span>
                   <div v-for="(lnk, i) in settings.branding.links" :key="i" class="link-row">
-                    <input v-model="lnk.label" placeholder="名称" /><input v-model="lnk.href" placeholder="/site/guide.html" /><button class="btn ghost small" @click="settings.branding.links.splice(i, 1)">移除</button>
+                    <input v-model="lnk.label" placeholder="名称" /><input v-model="lnk.href" placeholder="/docs/manual.html" /><button class="btn ghost small" @click="settings.branding.links.splice(i, 1)">移除</button>
                   </div>
                   <button class="btn ghost small" @click="settings.branding.links.push({ label: '', href: '/' })">＋ 添加链接</button>
                 </div>

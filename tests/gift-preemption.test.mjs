@@ -1,9 +1,10 @@
+import {displaySource} from './display-source.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-for(const file of ['../web/app.zh.mjs','../web/app.en.mjs']){
- const code=fs.readFileSync(file,'utf8').split('function preemptForGift(){')[1].split('function next(){')[0];
+for(const file of ['展示端']){
+ const code=displaySource.split('function preemptForGift(){')[1].split('function next(){')[0];
  function run(phase,priority=false,paused=false){
   const product={factor:1,g:{rotation:{set(){}},position:{set(){}}}};
   const c={paused,busy:true,active:{name:'ordinary',priority},queue:[{name:'gift',priority:true},{name:'waiting',priority:false}],phase,currentProduct:product,products:[],scene:{attach(){}},transferState:{},elapsed:4,lastPct:50,disposeProduct:p=>p.disposed=true,articulateArm(){}};

@@ -54,5 +54,8 @@ docs/*.jpg
 tiktok-cover.png
 youtube-cover.png
 /studio/node_modules/
+# 展示端构建中间产物：源码在 web-src/parts/，最终产物 web/app/ 有意入库。
+web-src/app.entry.js
+
 # web/studio-dist/ 是有意入库的：产物仅约 96 KB，可让 clone 后 /studio/ 开箱即用。
 # 改了 studio/ 源码后必须重跑 bash scripts/build-studio.sh 并把新产物一并提交。

@@ -181,8 +181,8 @@ def test_default_settings_are_never_polluted(tmp_path, monkeypatch):
     reset = settings_module.reset_settings()
     assert reset['branding']['title'] == '头像打印机'
     assert reset['printer']['rules']['comment'] is True
-    assert [l['href'] for l in reset['branding']['links']] == [
-        '/site/features.html', '/site/guide.html']
+    assert [l['href'] for l in reset['branding']['links']] == [], \
+        '宣传页已下线，默认 links 应为空'
 
 
 def test_link_scheme_bypass_is_rejected(tmp_path, monkeypatch):
@@ -193,10 +193,10 @@ def test_link_scheme_bypass_is_rejected(tmp_path, monkeypatch):
         {'label': 'b', 'href': 'HTTP://example.com/x'},
         {'label': 'c', 'href': '//evil.example.com'},
         {'label': 'd', 'href': 'data:text/html,1'},
-        {'label': 'e', 'href': '/site/guide.html'},
+        {'label': 'e', 'href': '/docs/manual.html'},
     ]}})
     hrefs = [l['href'] for l in saved['branding']['links']]
-    assert hrefs == ['HTTP://example.com/x', '/site/guide.html']
+    assert hrefs == ['HTTP://example.com/x', '/docs/manual.html']
 
 
 def test_damaged_settings_document_is_repaired(tmp_path, monkeypatch):

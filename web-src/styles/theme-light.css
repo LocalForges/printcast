@@ -1,0 +1,44 @@
+/* 浅色主题：完整覆盖，不再让深底深字、内联颜色或 !important 补丁漏网。 */
+html[data-theme="light"] body{background:var(--pc-bg);color:var(--pc-text)}
+html[data-theme="light"] header{background:var(--pc-surface-2);border-bottom-color:var(--pc-border)}
+html[data-theme="light"] .panel,html[data-theme="light"] .card{background:var(--pc-surface);border-color:var(--pc-border)}
+html[data-theme="light"] .panelhead,html[data-theme="light"] .stagehead{border-bottom-color:var(--pc-border)}
+html[data-theme="light"] p,html[data-theme="light"] .hint,html[data-theme="light"] .note,
+html[data-theme="light"] .status,html[data-theme="light"] .tag{color:var(--pc-muted)}
+html[data-theme="light"] .announce{background:#e9eef8;border-bottom-color:var(--pc-border);color:#33405a}
+html[data-theme="light"] .badge{background:#fff3e6;color:#8a5a12}
+html[data-theme="light"] .canvas{background:radial-gradient(ellipse at 50% 48%,#e8edf6,#cfd8e8 65%,#c3ccdd)}
+html[data-theme="light"] .result{background:#fff;color:#1b2230}
+html[data-theme="light"] button{background:#e8edf8;color:#1b2230;border-color:#c8d2e4}
+html[data-theme="light"] input,html[data-theme="light"] select{background:#fff;color:#1b2230;border-color:#c8d2e4}
+
+/* 旧版遗漏的数据读数：深底深字在这里彻底修掉。 */
+html[data-theme="light"] .metric{background:var(--pc-metric)!important;border-color:var(--pc-border)!important}
+html[data-theme="light"] .metric small,html[data-theme="light"] .metric strong{color:#1b2230!important}
+html[data-theme="light"] .empty{color:#5a6678}
+html[data-theme="light"] .item b{color:#8a5a12}
+html[data-theme="light"] .item,html[data-theme="light"] .queue{color:#1b2230}
+html[data-theme="light"] .live{color:#9c4526}
+html[data-theme="light"] .dot{background:#c07a1e}
+html[data-theme="light"] .scene-bar,html[data-theme="light"] [style*="background:#1a202a"]{background:#eef2f9!important}
+html[data-theme="light"] #room-input{background:#fff!important;color:#1b2230!important;border-color:#c8d2e4!important}
+html[data-theme="light"] #print-progress,html[data-theme="light"] #live-status,
+html[data-theme="light"] #live-room,html[data-theme="light"] #room-open-status,
+html[data-theme="light"] #live-fetch,html[data-theme="light"] #yield-note,
+html[data-theme="light"] #demo-log,html[data-theme="light"] #print-rules-body,
+html[data-theme="light"] #print-rules summary{color:#33405a!important}
+
+/* 断点统一：旧版两套互相打架的 max-width:850px 已合并到这里。 */
+@media(max-width:850px){
+  .layout{grid-template-columns:1fr}
+  .canvas{height:420px}
+  main{padding:18px}
+  header{height:auto;min-height:64px;padding:10px 18px;flex-wrap:wrap;gap:8px}
+  .controls{flex-wrap:wrap}
+}
+@media(max-width:480px){
+  .top{flex-direction:column;align-items:flex-start;gap:12px}
+  h1{font-size:20px}
+  .canvas{height:340px}
+  .metrics{grid-template-columns:1fr}
+}

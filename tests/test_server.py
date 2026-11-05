@@ -53,7 +53,7 @@ class ServerTests(unittest.TestCase):
 
     # —— 静态文件 ——
     def test_static_pages(self):
-        for path in ('/web/index.html', '/web/index-en.html', '/site/features.html',
+        for path in ('/web/index.html', '/web/live-view.html',
                      '/src/collector/parse.mjs', '/assets/three.module.js'):
             with self.get(path) as response:
                 self.assertEqual(response.status, 200, path)
@@ -67,14 +67,14 @@ class ServerTests(unittest.TestCase):
         self.assertIn('no-store', header)
 
     def test_document_root_is_repo_root(self):
-        # /site/guide.html 与 /web 同在仓库根下（分层改写后最易断的引用）。
-        with self.get('/site/guide.html') as response:
+        # 展示端与工作台同在仓库根下；宣传页已下线，唯一展示入口是 /web/index.html。
+        with self.get('/web/index.html') as response:
             body = response.read()
-        self.assertIn('使用教程'.encode('utf-8'), body)
+        self.assertIn('头像打印机'.encode('utf-8'), body)
         # 旧版第三方（志哥AI）广告条 / 微信号 / wx-copy 脚本已彻底移除。
         self.assertNotIn('志哥AI'.encode('utf-8'), body)
         self.assertNotIn(b'wx-copy.js', body)
-        self.assertIn(b'../web/index.html', body)
+        self.assertNotIn(b'index-en.html', body, '英文版入口已下线')
 
     # —— 鉴权 ——
     def test_control_endpoint_denies_cross_site(self):

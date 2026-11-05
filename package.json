@@ -1,0 +1,15 @@
+{
+  "name": "printcast",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "description": "直播间弹幕与剧本驱动的 3D 打印直播台（展示端 + 控制台构建链）",
+  "scripts": {
+    "build:display": "bash scripts/build-display.sh",
+    "build:studio": "bash scripts/build-studio.sh",
+    "build": "npm run build:display && npm run build:studio"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}

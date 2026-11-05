@@ -5,9 +5,10 @@ video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
 #hint{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:#667282;font:14px 'Microsoft YaHei',sans-serif;letter-spacing:1px;text-align:center;line-height:1.9}
 #hint a{color:#9fc3e8}
 </style></head><body>
-<div id="hint"><div>⏳ 等待主窗口直播画面…</div><div style="font-size:12px">请保持主窗口（打印台）开启且不要最小化<br><a id="fallback" href="/web/index.html?scene=1" style="display:none">镜像不可用？点此用独立渲染窗口打开</a></div></div>
-<video id="v" autoplay playsinline muted></video>
+<div id="hint" role="status" aria-live="polite"><div>⏳ 等待主窗口直播画面…</div><div style="font-size:12px">请保持主窗口（打印台）开启且不要最小化<br><a id="fallback" href="/web/index.html?scene=1">镜像不可用？点此用独立渲染窗口打开</a></div></div>
+<video id="v" aria-label="打印台实时画面镜像" autoplay playsinline muted></video>
 <div id="interaction" tabindex="0" aria-label="左键旋转，右键平移，滚轮缩放" style="position:fixed;touch-action:none;outline:none"></div>
+<!-- 本页是原生 ES module（不进 Vite 构建），OrbitControls 依赖裸模块名 three。 -->
 <script type="importmap">{"imports":{"three":"../assets/three.module.js"}}</script>
 <script type="module">
 import * as THREE from '../assets/three.module.js';
@@ -42,7 +43,10 @@ function teardown() { inputChannel=null; if (pc) { try { pc.close() } catch (e) 
 
 bc.onmessage = async ev => {
   const m = ev.data || {};
-  if(m.type==='view-size'&&Number.isFinite(m.width)&&Number.isFinite(m.height)){window.pywebview?.api?.resize_scene(m.width,m.height).catch(()=>{});}
+  // resize_scene 在 pywebview 里是同步方法（返回字符串），旧版直接 .catch 会抛 TypeError。
+  if(m.type==='view-size'&&Number.isFinite(m.width)&&Number.isFinite(m.height)){
+    try{Promise.resolve(window.pywebview?.api?.resize_scene(m.width,m.height)).catch(()=>{})}catch(e){}
+  }
   else if(m.type==='view-camera'&&!interacting){syncing=true;const damping=controls.enableDamping;controls.enableDamping=false;controls.update();camera.position.fromArray(m.p);controls.target.fromArray(m.t);camera.fov=m.fov;camera.updateProjectionMatrix();controls.update();controls.enableDamping=damping;controls.enabled=true;syncing=false;}
   else if (m.type === 'view-offer' && m.sdp) {
     bc.postMessage({type:'view-camera-request'});

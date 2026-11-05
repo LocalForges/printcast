@@ -4,6 +4,36 @@
 
 ---
 
+## 纯净中文版 + 展示端前端工程化（2026-11-05 · dev 分支）
+
+按「移除其余版本、开启前端工程化、彻底改版」一次收口，**架构边界不变**：控制台唯一写源、展示端只读、运行时零第三方依赖。
+
+### 1. 只留一套中文展示端
+
+- 删除英文三件套 `web/index-en.html` / `web/app.en.mjs` / `src/audio/gift-speech-en.mjs`。英文版是**陈旧分叉**（缺 HUD 字幕、缺 3 处 `data-bind`），删除不丢任何功能，服务端也无专门路由。
+- 删除遗留页：`web/broadcast.html`（纯跳转壳）、`web/live.html`（永远停在「正在接入…」的竖屏空壳）、`site/cover-*.html` 三个零入链封面生成器，以及宣传页 `site/features.html` / `site/guide.html`。
+- **保留** `web/live-view.html`：`desktop.py` 实际拉起的 WebRTC 投屏镜像窗口，是功能页不是语言版本。本轮重写了它：恢复必需的 `three` importmap、修 `resize_scene` 同步返回却调 `.catch` 的 TypeError、补 `aria-live` 与视频标签、让「镜像不可用」自救链接真正可见。
+- 收口 `--room` 打开目标、`branding.links` 默认外链（宣传页下线后默认为空）、CLI 提示、桌面转发注释、文档与全部测试引用。
+
+### 2. 前端工程化：源码分层 + 构建产物入库
+
+- 新建 `web-src/`：`parts/` 按职责把 124KB 单文件切成运行时 / 三维场景 / 打印引擎 / 交互层四片；`core/` 放可独立 import 的真模块；`styles/` 放令牌、骨架、HUD、浅色主题四层 CSS。
+- `vite.config.js` + `scripts/build-display.sh` 把源码构建为 `web/app/app.js`（Three.js 一并打包，离线自包含）与 `web/app/app.css`，**产物入库**，clone 后无需 npm 即可运行。`web/index.html` 保持 URL 契约不变，只引用产物。Vite 只在构建期使用，展示端不引入 Vue 等运行时框架。
+- 构建脚本复用已安装的 Vite（根或 `studio/node_modules`），`web-src/` 与 `web/` 同级使 `../src/**`、`../assets/**` 相对 import 零改写。
+- 删掉 `web/app.zh.mjs` / `web/app.css`；5 个原本靠切单文件字符串跑的测试改读按构建顺序拼合的分片源码，CI 增加 `node --check web/app/app.js` 与产物无漂移检查。
+
+### 3. 页面与状态问题
+
+- **队列有硬上限了**：新增 `web-src/core/queue-policy.js`（真 ES 模块，浏览器与 Node 共用），剧本出场入队前检查上限（40 件）与 `seq` 去重，避免 5 秒自动出场叠加 1× 打印速度时无限堆积卡死；`seen` 集合设上界，不再无界增长。
+- **进度语义分开**：`describeAppearanceProgress()`（后端出场序列）与 `describePrintProgress()`（展示端打印百分比）不再混用；控制台大卡标题由「现在正在打印」改为「当前出场角色」，并注明打印进度以打印台画面为准。
+- **浅色主题重写**：删掉 `app.css` 里互相打架的两套 `!important` 补丁与 `.print-hud` 死样式；新增令牌层，补齐 `.metric`（旧版深底深字不可读）、`.empty`、`.item b`、内联深色输入框等覆盖，合并断点并补 480px 小屏档。
+
+回归：`pytest` 135 项全绿、`node --test` 87 项全绿（新增 `queue-policy.test.mjs`，重写 `html-structure.test.mjs`）。冒烟：入口与两端产物全部 200；已下线的 6 个页面全部 404。
+
+> 说明：渲染引擎是命令式的 Three.js 每帧循环，分片之间共享一个模块作用域；纯逻辑与策略已抽为真模块并可独立测试。作用域进一步显式化需带 GPU 的逐段回归，留作下一阶段。
+
+---
+
 ## 采集平台适配层 · 配置即时生效 · 控制台信息层重做（2026-11-05 晚）
 
 三件事一起收口：**采集要为多平台做准备**、**改配置不用等**、**当前在打什么一眼能看到**。

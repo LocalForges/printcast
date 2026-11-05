@@ -2,7 +2,7 @@
 
 边界原则（与「前端展示端只读」严格区分）：
 - 写入只发生在这里（经 /__api/settings 的 PUT），以及工作台 UI 对它的调用；
-- 所有展示页（web/index.html、broadcast.html、live-view.html、app.zh.mjs）只 GET，不 PUT；
+- 所有展示页（web/index.html、web/live-view.html、web-src/ 渲染模块）只 GET，不 PUT；
 - 这样「参数由控制台统一设置，其它端只负责展示」才成立。
 
 持久化：SQLite（db.py）是运行时唯一数据源，深合并与净化在单个写事务里完成，
@@ -26,10 +26,8 @@ DEFAULT_SETTINGS = {
         'subtitle': '直播间弹幕与剧本驱动的 3D 打印直播台',
         'accent': '#4f8cff',
         'footer': '本程序完全免费、本地运行，数据不上传任何云端。',
-        'links': [
-            {'label': '功能介绍', 'href': '/site/features.html'},
-            {'label': '使用教程', 'href': '/site/guide.html'},
-        ],
+        # 宣传页已下线；控制台可自行配置外链，默认不挂任何链接。
+        'links': [],
     },
     'display': {
         'theme': 'dark',

@@ -3,7 +3,7 @@
 保留本文件是为了不破坏既有调用方式：
   - macOS / Linux：python src/desktop/desktop_launcher.py --server-only
   - Windows：scripts/*.bat
-  - site/guide.html：pythonw desktop_launcher.py --room 房间号 --capture
+  - 展示端入口：pythonw desktop_launcher.py --room 房间号 --capture（打开 /web/index.html）
   - tests/test_native_output.py：from desktop_launcher import ensure_server, ROOT
   - scripts/run-bridge-forever.bat：from desktop_launcher import bridge_status
 
