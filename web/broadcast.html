@@ -2,157 +2,18 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title data-bind="branding.title">内容包出场广播 · printcast</title>
-<script src="./settings-loader.js"></script>
-<style>
-  :root { --bg:#0b0e14; --card:#141a26; --line:#26304a; --txt:#e8edf7;
-          --muted:#8b97ad; --accent:#4f8cff; --gold:#d9a441; }
-  * { box-sizing: border-box; }
-  body { margin:0; font:15px/1.5 system-ui,"PingFang SC","Microsoft YaHei",sans-serif;
-         background:var(--bg); color:var(--txt); }
-  header { padding:16px 22px; border-bottom:1px solid var(--line); display:flex;
-           align-items:baseline; gap:12px; flex-wrap:wrap; }
-  header h1 { font-size:18px; margin:0; }
-  header .sub { color:var(--muted); font-size:13px; }
-  header a.console { margin-left:auto; color:var(--accent); font-size:13px; text-decoration:none; }
-  [data-announce] { display:flex; gap:14px; align-items:center; flex-wrap:wrap;
-                    padding:9px 22px; background:#121a26; border-bottom:1px solid var(--line);
-                    color:var(--txt); font-size:13px; }
-  [data-announce][hidden] { display:none; }
-  [data-announce] a { color:var(--accent); text-decoration:none; }
-  main { max-width:980px; margin:0 auto; padding:22px; }
-  .panel { background:var(--card); border:1px solid var(--line);
-           border-radius:12px; padding:16px; }
-  .panel h2 { font-size:14px; margin:0 0 12px; color:var(--muted);
-              text-transform:uppercase; letter-spacing:.05em; }
-  .stage { display:flex; flex-direction:column; align-items:center; justify-content:center;
-           min-height:420px; text-align:center; }
-  .avatar { width:180px; height:180px; border-radius:24px; object-fit:cover;
-            background:#1b2336; border:2px solid var(--line); }
-  .fallback { display:flex; align-items:center; justify-content:center;
-              font-size:84px; font-weight:700; color:var(--gold);
-              background:linear-gradient(135deg,#1b2336,#26304a); }
-  .name { font-size:34px; font-weight:700; margin:18px 0 4px; }
-  .pack { color:var(--muted); font-size:14px; }
-  .speech { margin-top:14px; font-size:17px; color:#cdd6e6; max-width:520px; }
-  .tags { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
-  .tag { font-size:12px; color:var(--muted); border:1px solid var(--line);
-         border-radius:999px; padding:3px 10px; }
-  .progress { margin-top:18px; color:var(--muted); font-size:13px; }
-  .hint { color:var(--muted); font-size:12px; margin-top:8px; }
-  .status { font-size:13px; color:var(--muted); margin-top:10px; text-align:center; }
-  .pill { display:inline-block; background:#0e1320; border:1px solid var(--line);
-          border-radius:999px; padding:2px 10px; font-size:12px; color:var(--muted); }
-  .read-only { margin-top:18px; padding-top:14px; border-top:1px solid var(--line);
-               color:var(--muted); font-size:13px; line-height:1.8; }
-  .read-only code { color:var(--gold); }
-</style>
-</head>
-<body>
-<div data-announce hidden></div>
-<header>
-  <h1 data-bind="branding.title">内容包出场广播</h1>
-  <span class="sub" data-bind="branding.subtitle">按出场顺序推送到所有打开本页的标签页</span>
-  <span class="pill" id="conn">连接中…</span>
-  <a class="console" href="/studio/">控制台设置 →</a>
-</header>
-
-<main>
-  <section class="panel">
-    <h2>出场卡片 · 只读展示</h2>
-    <div class="stage" id="stage">
-      <div class="avatar fallback" id="avatar">—</div>
-      <div class="name" id="cname">等待出场…</div>
-      <div class="pack" id="cpack"></div>
-      <div class="speech" id="cspeech"></div>
-      <div class="tags" id="ctags"></div>
-      <div class="progress" id="cprogress"></div>
-    </div>
-    <div class="status" id="status">尚未开始。</div>
-    <div class="read-only">
-      本页只负责展示，不提供任何控制操作：内容包、策略、出场模式与启停统一在
-      <a href="/studio/" style="color:var(--accent)">控制台 /studio</a> 设置。<br>
-      出场事件由 <code>SceneRelay</code> 的 <code>view-appearance</code> 实时同步；打印台会同步把角色打出来（M1「讲到谁就打谁」）。
-    </div>
-  </section>
-</main>
-
+<meta http-equiv="refresh" content="0; url=./index.html" />
+<title>已并入头像打印台 · printcast</title>
 <script>
-"use strict";
-// 展示端边界：这里只允许 GET 读取状态 / 订阅事件，绝不 POST 任何控制命令。
-// 控制命令属于控制台（Studio）职责，见 /studio/。
-const $ = (id) => document.getElementById(id);
-const base = location.origin;
-const clientId = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()));
-
-function getJSON(path) {
-  return fetch(base + path).then(function (r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
-  });
-}
-
-function renderAppearance(a) {
-  if (!a) return;
-  const av = $('avatar');
-  if (a.avatar) {
-    av.className = 'avatar';
-    av.textContent = '';
-    av.style.background = '';
-    av.src = base + '/media/' + a.avatar;
-  } else {
-    av.removeAttribute('src');
-    av.className = 'avatar fallback';
-    av.textContent = (a.name || '?').slice(0, 1);
-  }
-  $('cname').textContent = a.name || '—';
-  $('cpack').textContent = [a.packTitle, a.mode && ('模式:' + a.mode),
-                            a.loop ? ('第' + (a.loop + 1) + '轮') : '']
-                            .filter(Boolean).join(' · ');
-  $('cspeech').textContent = a.speech || '';
-  $('ctags').innerHTML = (a.tags || []).map(t => '<span class="tag">' + t + '</span>').join('');
-  $('cprogress').textContent = a.index != null ? ('序号 #' + (a.index + 1)) : '';
-}
-
-async function refreshState() {
-  try {
-    const s = await getJSON('/__api/broadcast');
-    const b = s.broadcast || {};
-    if (b.active) {
-      $('status').textContent = '进行中：' + (b.packIds || []).join(', ')
-        + ' · 模式 ' + b.mode + ' · 已出场 ' + (b.progress ? b.progress.appeared : 0);
-      if (b.current) renderAppearance(b.current);
-    } else {
-      $('status').textContent = '尚未开始（请到控制台启动广播）。';
-    }
-  } catch (e) { $('status').textContent = '状态读取失败：' + e.message; }
-}
-
-// —— 实时同步：只读轮询 SceneRelay 的 view-appearance ——
-let cursor = null;
-async function poll() {
-  try {
-    const r = await fetch(base + '/__scene-events?client=' + clientId
-      + (cursor === null ? '' : '&after=' + cursor));
-    const d = await r.json();
-    cursor = d.cursor;
-    $('conn').textContent = '已连接 · 同步中';
-    for (const m of d.messages || []) {
-      if (m.type === 'view-appearance' && m.appearance) renderAppearance(m.appearance);
-    }
-  } catch (e) {
-    $('conn').textContent = '连接断开，重连中…';
-    await new Promise(r => setTimeout(r, 1500));
-  }
-  setTimeout(poll, 600);
-}
-
-refreshState();
-poll();
+  // 出场广播已并入「头像打印台」：同一画面既出 3D 头像，又叠出场字幕（姓名/台词/标签/来源）。
+  // 保留原链接 /web/broadcast.html 的兼容性：把查询参数（如 ?scene=1 的干净 OBS 模式）带到统一打印台。
+  (function () {
+    var q = location.search || '';
+    location.replace('./index.html' + q + (q ? '&' : '?') + 'from=broadcast');
+  })();
 </script>
-<div class="page-footer" style="padding:14px 22px;color:#8b97ad;font-size:12px">
-  <span data-bind-html="branding.footer">本程序完全免费、本地运行，数据不上传云端。</span><span data-links></span>
-</div>
+</head>
+<body style="margin:0;background:#0b0e14;color:#e8edf7;font:15px/1.6 system-ui,'Microsoft YaHei',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh">
+  <p>出场广播已并入「头像打印台」，正在跳转… <a style="color:#4f8cff" href="./index.html">点此立即打开打印台</a></p>
 </body>
 </html>

@@ -11,8 +11,8 @@ watch(theme, (v) => {
 }, { immediate: true });
 
 const VIEWS = {
-  overview: { title: '总览', desc: '实时状态、当前出场与一键干预' },
-  broadcast: { title: '出场广播', desc: '启动剧本播放，讲到谁就打谁' },
+  overview: { title: '头像打印', desc: '实时打印状态、内容源切换与一键干预' },
+  broadcast: { title: '剧本播放', desc: '作为「头像打印」的内容源：启动剧本播放，讲到谁就打谁' },
   packs: { title: '内容包', desc: '管理已导入的角色内容包' },
   import: { title: '数据导入', desc: '下载模板、校验并导入 CSV / JSON' },
   media: { title: '图片资源', desc: '上传与清理头像贴图' },
@@ -27,6 +27,9 @@ const NAV = [
   { group: '编排', items: ['schedule'] },
   { group: '配置', items: ['settings', 'system', 'audit'] },
 ];
+// 内容源切换：头像打印既可由「实时直播」驱动，也可由「剧本播放」驱动；
+// 二者共用同一台 3D 打印机与画面，不再各做一套。
+const contentSource = ref('script'); // 'script' = 剧本播放；'live' = 实时直播
 const activeView = ref('overview');
 const viewMeta = computed(() => VIEWS[activeView.value] || VIEWS.overview);
 function go(view) { activeView.value = view; }
@@ -126,7 +129,7 @@ const lights = computed(() => [
   { key: 'service', label: '本机服务', on: !!status.value, detail: status.value ? '端口 ' + status.value.service.port : '未连通' },
   { key: 'bridge', label: '数据桥', on: !!(status.value && status.value.bridge && status.value.bridge.ok),
     detail: status.value && status.value.bridge && status.value.bridge.ok ? status.value.bridge.url : '未启动' },
-  { key: 'broadcast', label: '出场广播', on: !!bcState.value.active,
+  { key: 'broadcast', label: '剧本播放', on: !!bcState.value.active,
     detail: bcState.value.active ? '进行中 · 已出场 ' + (bcState.value.seq || 0) : '待机' },
 ]);
 const currentChar = computed(() => bcState.value.current || null);
@@ -546,7 +549,7 @@ async function startFromSchedule() {
     bcSeed.value = p.seed === undefined ? '' : String(p.seed);
     bcLoop.value = !!p.loop;
     await Promise.all([refreshStatus(), loadAudit()]);
-    flash('已按预演参数开播，可在「出场广播」继续推进');
+    flash('已按预演参数开播，可在「剧本播放」继续推进');
   } catch (e) { flash('开播失败：' + e.message, true); }
 }
 
@@ -555,11 +558,11 @@ async function startFromSchedule() {
 // iframe 注入任何草稿配置（postMessage 注入会破坏「console 写 / display 读」）。
 // 因此只有已保存的设置才会出现在预览里；保存成功后自动刷新 iframe。
 const previewTargets = [
-  { label: '广播展示页', value: '/web/broadcast.html' },
+  { label: '头像打印台', value: '/web/index.html' },
   { label: '3D 打印台', value: '/web/index.html' },
   { label: '直播小窗', value: '/web/live-view.html' },
 ];
-const previewTarget = ref('/web/broadcast.html');
+const previewTarget = ref('/web/index.html');
 const previewScale = ref(0.5);
 const previewEnabled = ref(true);
 const previewNonce = ref(0);
@@ -643,7 +646,7 @@ async function bcStart() {
       seed: normalizeSeed(bcSeed.value),
     });
     await Promise.all([refreshStatus(), loadAudit()]);
-    flash('出场广播已启动');
+    flash('剧本播放已启动');
   } catch (e) { flash('启动失败：' + e.message, true); }
 }
 async function bcNext() {
@@ -865,20 +868,41 @@ onUnmounted(() => {
                 <div class="muted" v-if="bcState.active">
                   {{ (bcState.packIds || []).join(' / ') }} · 第 {{ bcState.seq || 0 }} 位 · 模式 {{ bcState.mode }}
                 </div>
-                <div class="muted" v-else>在下方选好内容包后点「开始广播」，或到「出场广播」页配置参数。</div>
+                <div class="muted" v-else>在上方选好内容包后点「开始剧本播放」，或到「剧本播放」页配置参数。</div>
               </div>
             </div>
             <div class="hero-actions">
               <button class="btn primary" @click="bcStart">开始 / 重启广播</button>
               <button class="btn" :disabled="!bcState.active" @click="bcNext">下一个</button>
               <button class="btn ghost" :disabled="!bcState.active" @click="ask('reset-broadcast')">重置进度</button>
-              <button class="btn ghost" @click="go('broadcast')">点名 / 高级控制 →</button>
+              <button class="btn ghost" @click="go('broadcast')">剧本播放 / 高级控制 →</button>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head"><h2>内容源</h2><span class="muted">同一台 3D 打印机，可切换驱动方式</span></div>
+            <div class="seg">
+              <button :class="contentSource==='script' ? 'seg-btn active' : 'seg-btn'" @click="contentSource='script'">剧本播放（内容包出场）</button>
+              <button :class="contentSource==='live' ? 'seg-btn active' : 'seg-btn'" @click="contentSource='live'">实时直播（弹幕 / 礼物）</button>
+            </div>
+            <div class="row tight" style="margin-top:12px">
+              <template v-if="contentSource==='script'">
+                <button class="btn primary" @click="bcStart">开始 / 重启剧本播放</button>
+                <button class="btn" :disabled="!bcState.active" @click="bcNext">下一个</button>
+                <button class="btn" :disabled="!bcState.active" @click="bcPlaying ? bcPause() : bcPlay()">{{ bcPlaying ? '暂停播放' : '自动播放' }}</button>
+                <button class="btn ghost" :disabled="!bcState.active" @click="ask('reset-broadcast')">重置进度</button>
+              </template>
+              <template v-else>
+                <button class="btn primary" @click="toggleBridge">{{ status && status.bridge && status.bridge.ok ? '停止数据桥' : '启动数据桥' }}</button>
+                <span class="muted">直播由数据桥从直播间抓取弹幕 / 礼物，实时驱动打印。</span>
+                <a class="link" :href="'/web/index.html?room=' + ((settings&&settings.live&&settings.live.defaultRoom)||'')" target="_blank">打开直播抓取窗口 ↗</a>
+              </template>
             </div>
           </section>
 
           <div class="metrics">
             <div class="metric"><div class="metric-label">内容包</div><div class="metric-value mono">{{ counts.packs }}</div><div class="metric-sub">已导入</div></div>
-            <div class="metric"><div class="metric-label">已出场</div><div class="metric-value mono">{{ bcState.seq || 0 }}</div><div class="metric-sub">本轮广播</div></div>
+            <div class="metric"><div class="metric-label">已出场</div><div class="metric-value mono">{{ bcState.seq || 0 }}</div><div class="metric-sub">本轮剧本</div></div>
             <div class="metric"><div class="metric-label">图片资源</div><div class="metric-value mono">{{ counts.media }}</div><div class="metric-sub">已上传</div></div>
             <div class="metric"><div class="metric-label">服务运行</div><div class="metric-value mono">{{ status ? Math.floor(status.service.uptimeSeconds / 60) : 0 }}<span class="unit">分</span></div><div class="metric-sub">自启动</div></div>
           </div>
@@ -887,7 +911,7 @@ onUnmounted(() => {
             <section class="card">
               <div class="card-head"><h2>实时事件</h2><span class="muted">订阅 /__scene-events · 自动刷新</span></div>
               <div class="event-list">
-                <div v-if="!events.length" class="empty">暂无事件。启动广播后，出场、语音、打印入队会实时出现在这里。</div>
+                <div v-if="!events.length" class="empty">暂无事件。启动剧本播放或直播后，出场、语音、打印入队会实时出现在这里。</div>
                 <div v-for="(ev, i) in events" :key="i" class="event-row">
                   <span class="mono event-time">{{ ev.time }}</span><span>{{ ev.text }}</span>
                 </div>
@@ -898,22 +922,43 @@ onUnmounted(() => {
               <div class="chain">
                 <div class="chain-row"><span class="chain-key">本机服务</span><span :class="status ? 'tag ok' : 'tag bad'">{{ status ? 'HTTP ' + status.service.port : '断开' }}</span></div>
                 <div class="chain-row"><span class="chain-key">数据桥 / 采集</span><span :class="status && status.bridge && status.bridge.ok ? 'tag ok' : 'tag mute'">{{ status && status.bridge && status.bridge.ok ? status.bridge.url : '未启动' }}</span></div>
-                <div class="chain-row"><span class="chain-key">出场广播</span><span :class="bcState.active ? 'tag ok' : 'tag mute'">{{ bcState.active ? '进行中' : '待机' }}</span></div>
-                <div class="chain-row"><span class="chain-key">剧本打印</span><span class="tag mute">{{ settings && settings.broadcast && settings.broadcast.scriptedPrint ? '已启用' : '已关闭' }}</span></div>
+                <div class="chain-row"><span class="chain-key">剧本播放</span><span :class="bcState.active ? 'tag ok' : 'tag mute'">{{ bcState.active ? '进行中' : '待机' }}</span></div>
+                <div class="chain-row"><span class="chain-key">剧本打印到 3D</span><span class="tag mute">{{ settings && settings.broadcast && settings.broadcast.scriptedPrint ? '已启用' : '已关闭' }}</span></div>
               </div>
               <div class="row tight">
                 <button class="btn small" @click="toggleBridge">{{ status && status.bridge && status.bridge.ok ? '停止数据桥' : '启动数据桥' }}</button>
-                <a class="link" href="/web/broadcast.html" target="_blank">广播展示页 ↗</a>
-                <a class="link" href="/web/index.html" target="_blank">3D 打印台 ↗</a>
+                <a class="link" href="/web/index.html" target="_blank">头像打印台 ↗</a>
+              </div>
+            </section>
+          </div>
+
+          <div class="two-col">
+            <section class="card">
+              <div class="card-head"><h2>打印规则</h2><span class="muted">从「控制台设置」搬来，直接在此调整</span></div>
+              <div class="checks">
+                <label class="switch" v-for="k in ['comment','join','like','follow','gift','giftVoice','joinVoice']" :key="k"><input type="checkbox" v-model="settings.printer.rules[k]" /><span class="track"></span>{{ ruleLabel(k) }}</label>
+              </div>
+              <div class="row">
+                <label class="switch"><input type="checkbox" v-model="settings.printer.autoDemo" /><span class="track"></span>自动演示填充</label>
+                <label class="switch"><input type="checkbox" v-model="settings.printer.idleFill" /><span class="track"></span>空闲测试头像</label>
+                <label>演示间隔 (ms)<input type="number" v-model.number="settings.printer.demoGapMs" min="0" /></label>
+                <label>空闲阈值 (秒)<input type="number" v-model.number="settings.printer.idleSeconds" min="0" /></label>
+              </div>
+              <button class="btn small" :disabled="!settingsDirty" @click="saveSettings">保存打印规则</button>
+            </section>
+            <section class="card">
+              <div class="card-head"><h2>打印台实时画面</h2><span class="muted">只读预览 · 与展示端同一画面</span></div>
+              <div class="preview-box" :style="previewBoxStyle">
+                <iframe :key="previewUrl" :src="previewUrl" :style="previewFrameStyle" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" title="头像打印台实时预览"></iframe>
               </div>
             </section>
           </div>
         </template>
 
-        <!-- ============ 出场广播 ============ -->
+        <!-- ============ 剧本播放 ============ -->
         <template v-else-if="activeView === 'broadcast'">
           <section class="card">
-            <div class="card-head"><h2>广播参数</h2><span class="muted">未开播时初值来自控制台设置</span></div>
+            <div class="card-head"><h2>剧本播放参数</h2><span class="muted">未开播时初值来自控制台设置</span></div>
             <div class="row"><span class="field-label">内容包</span>
               <label class="switch" v-for="p in packs" :key="p.id"><input type="checkbox" :value="p.id" v-model="bcPacks" /><span class="track"></span>{{ p.title }}</label>
             </div>
@@ -1054,7 +1099,7 @@ onUnmounted(() => {
               <button class="btn" @click="toggleRehearsal" :disabled="!schedAppearances.length">{{ tlPlaying ? '停止预演' : '本地预演' }}</button>
               <button class="btn ghost" @click="copyText(schedUrl)">复制复现链接</button>
               <button class="btn ghost" @click="startFromSchedule">按此配置开播</button>
-              <a class="link" href="/web/broadcast.html" target="_blank">广播展示页 ↗</a>
+              <a class="link" href="/web/index.html" target="_blank">头像打印台 ↗</a>
             </div>
             <div class="repro">
               <span class="tag mute">固定 seed 复现</span>
@@ -1113,7 +1158,7 @@ onUnmounted(() => {
             <span :class="settingsDirty ? 'tag warn' : 'tag ok'">{{ settingsDirty ? '有未保存的修改' : '已与后端同步' }}</span>
             <button class="btn primary" :disabled="!settingsDirty" @click="saveSettings">保存设置</button>
             <button class="btn ghost" @click="ask('reset-settings')">恢复默认</button>
-            <span class="muted">保存后打开：<a class="link" href="/web/index.html" target="_blank">打印台 ↗</a><a class="link" href="/web/broadcast.html" target="_blank">广播页 ↗</a><a class="link" href="/web/live-view.html" target="_blank">直播小窗 ↗</a></span>
+            <span class="muted">保存后打开：<a class="link" href="/web/index.html" target="_blank">头像打印台 ↗</a><a class="link" href="/web/live-view.html" target="_blank">直播小窗 ↗</a></span>
           </div>
           <template v-if="settings">
             <section class="card group">
@@ -1148,22 +1193,7 @@ onUnmounted(() => {
             </section>
 
             <section class="card group">
-              <button class="group-head" @click="openGroups.printer = !openGroups.printer"><span>打印机规则</span><span class="muted">{{ openGroups.printer ? '收起' : '展开' }}</span></button>
-              <div v-if="openGroups.printer" class="group-body">
-                <div class="checks">
-                  <label class="switch" v-for="k in ['comment','join','like','follow','gift','giftVoice','joinVoice']" :key="k"><input type="checkbox" v-model="settings.printer.rules[k]" /><span class="track"></span>{{ ruleLabel(k) }}</label>
-                </div>
-                <div class="row">
-                  <label class="switch"><input type="checkbox" v-model="settings.printer.autoDemo" /><span class="track"></span>自动演示填充</label>
-                  <label class="switch"><input type="checkbox" v-model="settings.printer.idleFill" /><span class="track"></span>空闲测试头像</label>
-                  <label>演示间隔 (ms)<input type="number" v-model.number="settings.printer.demoGapMs" min="0" /></label>
-                  <label>空闲阈值 (秒)<input type="number" v-model.number="settings.printer.idleSeconds" min="0" /></label>
-                </div>
-              </div>
-            </section>
-
-            <section class="card group">
-              <button class="group-head" @click="openGroups.broadcast = !openGroups.broadcast"><span>出场广播默认值</span><span class="muted">{{ openGroups.broadcast ? '收起' : '展开' }}</span></button>
+              <button class="group-head" @click="openGroups.broadcast = !openGroups.broadcast"><span>剧本播放默认值</span><span class="muted">{{ openGroups.broadcast ? '收起' : '展开' }}</span></button>
               <div v-if="openGroups.broadcast" class="group-body">
                 <div class="row"><span class="field-label">默认内容包</span><label class="switch" v-for="p in packs" :key="p.id"><input type="checkbox" :value="p.id" v-model="settings.broadcast.defaultPacks" /><span class="track"></span>{{ p.title }}</label></div>
                 <div class="row">
@@ -1275,7 +1305,7 @@ onUnmounted(() => {
               <button class="btn small" @click="loadAudit">搜索 / 刷新</button>
               <button class="btn danger small" @click="ask('clear-audit')">清空日志</button>
             </div>
-            <div v-if="!auditEntries.length" class="empty">暂无匹配的记录。到「内容包」「控制台设置」或「出场广播」做一次写操作，这里就会出现对应条目。</div>
+            <div v-if="!auditEntries.length" class="empty">暂无匹配的记录。到「内容包」「控制台设置」或「剧本播放」做一次写操作，这里就会出现对应条目。</div>
             <table v-else>
               <thead><tr><th>时间</th><th>动作</th><th>目标</th><th>结果</th><th>说明</th></tr></thead>
               <tbody>
@@ -1454,6 +1484,13 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   padding: 18px 20px; margin-bottom: 14px; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .card-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+
+.seg { display: inline-flex; padding: 3px; gap: 3px; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 10px; }
+.seg-btn { border: 0; background: transparent; color: var(--muted); font: inherit;
+  font-size: 13px; padding: 7px 14px; border-radius: 7px; cursor: pointer; }
+.seg-btn:hover { color: var(--text); }
+.seg-btn.active { background: var(--accent); color: #fff; }
 .banner { padding: 10px 14px; border-radius: 9px; margin-bottom: 12px; font-size: 13px; border: 1px solid transparent; }
 .banner.err { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
 .empty { padding: 18px; border: 1px dashed var(--border); border-radius: 9px; color: var(--muted); font-size: 13px; }

@@ -281,7 +281,8 @@ let glint=mesh(coverGeometry.clone(),glintMaterial,g);glint.position.set(0,1.7,.
 // A small bevel under the portrait and a stepped plinth give the object weight.
 box(1.58,.055,.72,0,.726,.005,porcelain,g);box(1.7,.035,.8,0,.572,0,porcelain,g);box(.48,.14,.22,0,1.15,-.14,porcelain,g);
 let labelTex=texture(1024,420,(c,w,h)=>{c.fillStyle=tier===2?'#242a2b':'#f5efe3';c.fillRect(0,0,w,h);c.fillStyle=tier===2?'#fff4dc':'#181b1b';c.textAlign='center';const name=v.name;let font=94;do{c.font='800 '+font+'px "Microsoft YaHei",sans-serif';if(c.measureText(name).width<w-60)break;font-=2}while(font>28);c.fillText(name,w/2,119);c.globalAlpha=.3;c.fillRect(44,148,w-88,3);c.globalAlpha=1;c.font='900 194px "Microsoft YaHei",sans-serif';c.fillText(v.score+'分',w/2,345)});labelTex.anisotropy=renderer.capabilities.getMaxAnisotropy();let label=mesh(new THREE.PlaneGeometry(1.46,.58),new THREE.MeshStandardMaterial({map:labelTex,roughness:.42,metalness:.05,clippingPlanes:[plane]}),g);label.position.set(0,.95,.325);label.rotation.x=-.16;
-let entry={g,plane,avatarMat,labelTex,glint,glintAge:null,disposed:false};new THREE.TextureLoader().load(v.avatar||fallbackAvatar(v.name),tex=>{if(entry.disposed){tex.dispose();return}tex.colorSpace=THREE.SRGBColorSpace;tex.anisotropy=renderer.capabilities.getMaxAnisotropy();tex.minFilter=THREE.LinearMipmapLinearFilter;tex.magFilter=THREE.LinearFilter;tex.generateMipmaps=true;avatarMat.map=tex;avatarMat.emissiveMap=tex;avatarMat.color.set('#ffffff');avatarMat.needsUpdate=true},undefined,()=>{});return entry}
+let entry={g,plane,avatarMat,labelTex,glint,glintAge:null,disposed:false};const applyAvatar=tex=>{if(entry.disposed){tex.dispose();return}tex.colorSpace=THREE.SRGBColorSpace;tex.anisotropy=renderer.capabilities.getMaxAnisotropy();tex.minFilter=THREE.LinearMipmapLinearFilter;tex.magFilter=THREE.LinearFilter;tex.generateMipmaps=true;avatarMat.map=tex;avatarMat.emissiveMap=tex;avatarMat.color.set('#ffffff');avatarMat.needsUpdate=true};new THREE.TextureLoader().load(v.avatar||fallbackAvatar(v.name),applyAvatar,undefined,()=>{ // 头像媒体缺失（用户设置的 avatar 没落到 /media/）时，回退到首字徽章而非白板，并记入缺失资源提示
+ if(v.avatar){markMissingAsset(v.avatar)} new THREE.TextureLoader().load(fallbackAvatar(v.name),applyAvatar)});return entry}
 function disposeProduct(p){p.disposed=true;p.g.removeFromParent();p.g.traverse(o=>{if(o.isMesh||o.isLineSegments){o.geometry.dispose();if(o.material.map&&o.material.map!==wood&&o.material.map!==grain)o.material.map.dispose();o.material.dispose()}})}
 let autoDemo=true;let lastDemoFill=0;function replenishDemo(force){if(!autoDemo||paused||busy||queue.length||!demoPeople.length)return;const demoGap=Number(printRules.demoGapMs);if(!force&&(demoGap===0||(lastDemoFill&&Date.now()-lastDemoFill<demoGap)))return;lastDemoFill=Date.now();const person=randomPerson();queue.push({...person,size:Math.random()<.3?'large':'small',priority:false,source:'自动演示',copy:1,total:1});renderQueue();updateScreen()}
 function idleTestFill(){if(!printRules.idleFill||paused||!demoPeople.length||queue.length>=2||Date.now()-lastLiveMsgAt<printRules.idleSeconds*1000)return;lastLiveMsgAt=Date.now();liveEvent('like',randomPerson(),1,null,'30秒无互动·测试头像',false)}
@@ -298,7 +299,16 @@ function preemptForGift(){
  }
  currentProduct=null;transferState=null;active=null;busy=false;phase='idle';elapsed=0;lastPct=-1;articulateArm(0);
 }
-function next(){if(autoDemo)replenishDemo();if(paused||busy||!queue.length)return;busy=true;active=queue.shift();active.score=60+Math.floor(Math.random()*36);currentProduct=createProduct(active);currentProduct.factor=active.size==='large'?(active.priority||String(active.source||'').startsWith('礼物')?1.6:1.35):1;currentProduct.g.scale.setScalar(currentProduct.factor);currentProduct.g.position.y=.57*(1-currentProduct.factor);prepareFilament(currentProduct);machineAudio.cue('start');giftSpeech.printing(active.name);phase='printing';elapsed=0;renderQueue();$('currentName').textContent=active.name;$('currentImg').src=active.avatar||fallbackAvatar(active.name);$('score').textContent='打印中';updateScreen()}
+function showHud(job){const hud=$('hud');if(!hud)return;if(!job){hud.hidden=true;return;}
+  $('hud-name').textContent=job.name||'';
+  $('hud-source').textContent=job.scripted?'剧本播放':(job.live?'直播互动':'演示');
+  $('hud-speech').textContent=job.speech||'';
+  const raw=Array.isArray(job.tags)?job.tags:(job.tags?String(job.tags).split(';').map(s=>s.trim()).filter(Boolean):[]);
+  const box=$('hud-tags');box.innerHTML='';raw.forEach(t=>{const s=document.createElement('span');s.className='hud-tag';s.textContent=t;box.append(s)});
+  const meta=[];if(job.packTitle)meta.push(job.packTitle);if(job.index!=null)meta.push('第 '+(job.index+1)+' 位');
+  $('hud-meta').textContent=meta.join(' · ');hud.hidden=false;}
+function hideHud(){const hud=$('hud');if(hud)hud.hidden=true;}
+function next(){if(autoDemo)replenishDemo();if(paused||busy||!queue.length){if(!paused&&!busy&&!queue.length)hideHud();return;}busy=true;active=queue.shift();active.score=60+Math.floor(Math.random()*36);currentProduct=createProduct(active);currentProduct.factor=active.size==='large'?(active.priority||String(active.source||'').startsWith('礼物')?1.6:1.35):1;currentProduct.g.scale.setScalar(currentProduct.factor);currentProduct.g.position.y=.57*(1-currentProduct.factor);prepareFilament(currentProduct);machineAudio.cue('start');giftSpeech.printing(active.name);phase='printing';elapsed=0;renderQueue();$('currentName').textContent=active.name;{const ci=$('currentImg');ci.onerror=()=>{ci.onerror=null;ci.src=fallbackAvatar(active.name)};ci.src=active.avatar||fallbackAvatar(active.name);}$('score').textContent='打印中';showHud(active);updateScreen()}
 let liveWindow=null;
 function setSceneDetached(detached){
  stage.style.display=detached?'none':'';
@@ -498,7 +508,8 @@ function enqueueAppearance(ap){
   if(pcSettings&&pcSettings.broadcast&&pcSettings.broadcast.scriptedPrint===false) return;
   if(!printAllowed()) return;
   queue.push({name:ap.name,avatar:mediaUrl(ap.avatar),size:'large',priority:false,
-    source:'剧本·'+(ap.packTitle||'内容包'),copy:1,total:1,scripted:true,speech:ap.speech||''});
+    source:'剧本·'+(ap.packTitle||'内容包'),copy:1,total:1,scripted:true,speech:ap.speech||'',
+    tags:ap.tags||[],packTitle:ap.packTitle||'',index:ap.index});
   renderQueue(); updateScreen();
   if(pcSettings&&pcSettings.broadcast&&pcSettings.broadcast.speech!==false&&ap.speech&&giftSpeech) giftSpeech.say(ap.name,ap.speech,1);
   next();

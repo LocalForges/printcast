@@ -6,7 +6,26 @@
 <title data-bind="branding.title">头像打印机</title>
 <link rel="stylesheet" href="./app.css" />
 <meta name="referrer" content="no-referrer" />
-<link rel="stylesheet" href="../assets/live-rules.css" />
+    <link rel="stylesheet" href="../assets/live-rules.css" />
+    <style>
+      /* 出场字幕 HUD：把「出场广播 / 剧本」的姓名、台词、标签与来源叠在打印台上，
+         与 3D 打印共用同一画面；与直播事件共用，不再另开一张不搭边的卡片页。 */
+      #hud{position:absolute;left:0;right:0;bottom:0;padding:14px 18px 16px;
+        background:linear-gradient(0deg,rgba(8,11,16,.86),rgba(8,11,16,.30) 70%,transparent);
+        color:#f3f6fb;pointer-events:none;font-family:inherit}
+      #hud[hidden]{display:none}
+      #hud .hud-row{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+      #hud .hud-kicker{font-size:11px;letter-spacing:.12em;color:#9fc3e8;
+        border:1px solid #3a4a63;border-radius:999px;padding:2px 9px;white-space:nowrap}
+      #hud .hud-name{font-size:22px;font-weight:800;line-height:1.15;
+        text-shadow:0 2px 10px rgba(0,0,0,.6)}
+      #hud .hud-speech{margin-top:6px;font-size:15px;line-height:1.55;color:#e7eef7;
+        max-width:64ch;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+      #hud .hud-tags{margin-top:7px;display:flex;gap:6px;flex-wrap:wrap}
+      #hud .hud-tag{font-size:11px;color:#cfe0f2;background:rgba(63,90,124,.42);
+        border:1px solid rgba(120,150,190,.4);border-radius:6px;padding:2px 8px}
+      #hud .hud-meta{margin-top:6px;font-size:12px;color:#9fb3c8}
+    </style>
 <script src="./settings-loader.js"></script>
 </head>
 <body>
@@ -41,6 +60,12 @@
         <div class="result">
           <img id="currentImg" alt="当前头像" />
           <div><span id="currentName">等待头像进入队列</span><strong id="score">-- <small>分</small></strong></div>
+        </div>
+        <div class="hud" id="hud" hidden>
+          <div class="hud-row"><span class="hud-kicker" id="hud-source">内容源</span><span class="hud-name" id="hud-name"></span></div>
+          <div class="hud-speech" id="hud-speech"></div>
+          <div class="hud-tags" id="hud-tags"></div>
+          <div class="hud-meta" id="hud-meta"></div>
         </div>
       </div>
       <div class="controls">
